@@ -1,0 +1,971 @@
+/* Helheim — core game logic: turn engine, player actions, foe AI, blessings */
+'use strict';
+
+const Game = (() => {
+  let state = null;
+  let mode = 'idle'; // idle | throw | bash | leap
+  let bombSeq = 0;
+  let traveling = false; // auto-walking to shrine/exit on a cleared floor
+  let leapingKills = false; // kills made mid-leap earn no vigor (else leaps refund themselves)
+
+  /* ================= sound (tiny WebAudio synth, no assets) ================= */
+  const Sound = (() => {
+    let ac = null, muted = localStorage.getItem('helheim-muted') === '1';
+    function ctx() {
+      if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+      if (ac.state === 'suspended') ac.resume();
+      return ac;
+    }
+    function tone(freq, dur, type, vol, slide) {
+      if (muted) return;
+      try {
+        const a = ctx();
+        const o = a.createOscillator(), g = a.createGain();
+        o.type = type; o.frequency.value = freq;
+        if (slide) o.frequency.exponentialRampToValueAtTime(slide, a.currentTime + dur);
+        g.gain.value = vol;
+        g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
+        o.connect(g); g.connect(a.destination);
+        o.start(); o.stop(a.currentTime + dur);
+      } catch (e) { /* audio unavailable */ }
+    }
+    function noise(dur, vol) {
+      if (muted) return;
+      try {
+        const a = ctx();
+        const buf = a.createBuffer(1, a.sampleRate * dur, a.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+        const src = a.createBufferSource(); src.buffer = buf;
+        const g = a.createGain(); g.gain.value = vol;
+        src.connect(g); g.connect(a.destination);
+        src.start();
+      } catch (e) { /* audio unavailable */ }
+    }
+    return {
+      kill: () => { tone(660, 0.12, 'square', 0.05, 220); noise(0.08, 0.05); },
+      hurt: () => tone(140, 0.25, 'sawtooth', 0.09, 70),
+      step: () => tone(220, 0.05, 'triangle', 0.025),
+      leap: () => tone(330, 0.18, 'sine', 0.05, 660),
+      bash: () => { tone(180, 0.15, 'square', 0.07, 90); noise(0.1, 0.06); },
+      throw: () => tone(520, 0.12, 'sine', 0.05, 260),
+      boom: () => { noise(0.35, 0.12); tone(90, 0.35, 'sine', 0.1, 40); },
+      bless: () => { tone(523, 0.3, 'sine', 0.05); setTimeout(() => tone(784, 0.4, 'sine', 0.05), 120); },
+      descend: () => tone(196, 0.5, 'sine', 0.08, 98),
+      death: () => { tone(220, 0.8, 'sawtooth', 0.08, 55); noise(0.5, 0.08); },
+      toggleMute: () => { muted = !muted; localStorage.setItem('helheim-muted', muted ? '1' : '0'); return muted; },
+      isMuted: () => muted,
+    };
+  })();
+
+  /* Haptic feedback via the native iOS shell; a no-op everywhere else. */
+  function buzz(kind) {
+    try {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.haptic) {
+        window.webkit.messageHandlers.haptic.postMessage(kind);
+      }
+    } catch (e) { /* not in the native shell */ }
+  }
+
+  /* ================= state helpers ================= */
+
+  function tileAt(h) { return state.tiles.get(hexKey(h.q, h.r)); }
+  function foeAt(h) { return state.foes.find(f => f.q === h.q && f.r === h.r); }
+  function bombAt(h) { return state.bombs.find(b => b.q === h.q && b.r === h.r); }
+
+  function isWalkable(h, forFoe) {
+    const t = tileAt(h);
+    if (!t || t.lava) return false;
+    if (hexEq(h, state.rune)) return false;
+    if (foeAt(h) || bombAt(h)) return false;
+    if (forFoe) {
+      if (hexEq(h, state.player)) return false;
+      if (hexEq(h, state.stairs)) return false;
+      if (state.player.spearAt && hexEq(h, state.player.spearAt)) return false;
+    }
+    return true;
+  }
+
+  function leapRange() { return 2 + state.player.leapBonus; }
+  function has(b) { return state.player.blessings.has(b); }
+
+  /* ================= game setup ================= */
+
+  function newGame() {
+    traveling = false;
+    state = {
+      depth: 0,
+      tiles: null, stairs: null, rune: null, runeUsed: false,
+      foes: [], bombs: [],
+      player: {
+        q: 0, r: 0, hp: 3, maxHp: 3,
+        energy: 100, maxEnergy: 100,
+        bashCd: 0, bashMax: 4, bashPush: 1,
+        hasSpear: true, spearAt: null,
+        throwRange: 2, leapBonus: 0,
+        blessings: new Set(),
+      },
+      kills: 0, glory: 0, streak: 0, berserkUsed: false,
+      tranceUsed: false, bonusAction: false, shieldBlock: 0,
+      floorStartKills: 0,
+      over: false, modal: null,
+      log: 'You descend beneath the barrow…',
+    };
+    Game.state = state;
+    nextDepth();
+  }
+
+  function nextDepth() {
+    state.depth += 1;
+    state.depthTitle = rollDepthName();
+    const lvl = generateLevel(state.depth);
+    state.tiles = lvl.tiles;
+    state.stairs = lvl.stairs;
+    state.rune = lvl.rune;
+    state.foes = lvl.foes;
+    state.bombs = [];
+    state.runeUsed = false;
+    state.berserkUsed = false;
+    state.tranceUsed = false;
+    state.bonusAction = false;
+    state.shieldBlock = 0;
+    state.streak = 0;
+    state.player.q = lvl.start.q;
+    state.player.r = lvl.start.r;
+    state.player.energy = state.player.maxEnergy;
+    if (state.player.spearAt) { state.player.spearAt = null; state.player.hasSpear = true; }
+    mode = 'idle';
+    Renderer.clearAnims();
+    Renderer.setAnim('P', state.player, true);
+    for (const f of state.foes) Renderer.setAnim(f.id, f, true);
+    const extras = [];
+    let bonusTotal = 0;
+    if (state.pacifistBonus) {
+      extras.push(`+${state.pacifistBonus} for sparing the dead`);
+      bonusTotal += state.pacifistBonus;
+    }
+    if (state.skipBonus) {
+      extras.push('+10 for spurning the runestone');
+      bonusTotal += 10;
+    }
+    state.skipBonus = false;
+    state.pacifistBonus = 0;
+    state.floorStartKills = state.kills;
+    if (extras.length) {
+      Renderer.fxText(state.player, `+${bonusTotal} glory`, 'rgba(216,178,90,$A)');
+      log(`Depth ${state.depth} — ${state.depthTitle} · glory: ${extras.join(', ')}!`);
+    } else {
+      log(`Depth ${state.depth} — ${state.depthTitle}`);
+    }
+    Sound.descend();
+    UI.flashDepth(state.depth, state.depthTitle);
+    UI.update();
+    state.lastAction = 'arrive at depth ' + state.depth;
+    if (window.Dev) { Dev.newFloor(); Dev.record(); }
+  }
+
+  /* ================= logging ================= */
+
+  function log(msg) { state.log = msg; UI.setLog(msg); }
+
+  /* ================= kills / damage ================= */
+
+  function killFoe(f, cause, outright) {
+    if (outright) f.hp = 1; // ignores remaining hearts (e.g. crushed Ancients)
+    f.hp -= 1;
+    Renderer.fxSlash(f);
+    if (f.hp > 0) {
+      // Wounding staggers a foe: it cannot act on the turn it was hurt.
+      f.stun = Math.max(f.stun, 1);
+      Renderer.fxStun(f);
+      log(`The ${FOES[f.type].name.toLowerCase()} is wounded and staggers!`);
+      return false;
+    }
+    state.foes = state.foes.filter(x => x !== f);
+    state.kills += 1;
+    state.glory += 1;
+    state.turnKills += 1;
+    Sound.kill();
+    buzz('light');
+    if (!leapingKills) {
+      const vig = has('bloodlust') ? 30 : 15;
+      state.player.energy = Math.min(state.player.energy + vig, state.player.maxEnergy);
+      Renderer.fxText(f, '+' + vig, 'rgba(120,220,255,$A)');
+    }
+    log(`The ${FOES[f.type].name.toLowerCase()} ${pick(KILL_WORDS)}${cause ? ' (' + cause + ')' : ''}.`);
+    return true;
+  }
+
+  function hurtPlayer(n, source) {
+    if (state.shieldBlock > 0) {
+      state.shieldBlock -= 1;
+      Sound.bash();
+      Renderer.fxText(state.player, 'blocked!', 'rgba(140,220,255,$A)');
+      log(`Your braced shield turns aside ${source.toLowerCase()}!`);
+      return;
+    }
+    state.player.hp -= n;
+    Sound.hurt();
+    buzz('heavy');
+    Renderer.fxText(state.player, '-' + n, 'rgba(255,90,90,$A)');
+    UI.hurtFlash();
+    log(`${source} wounds you!`);
+    if (state.player.hp <= 0) die(source);
+  }
+
+  function loadRuns() {
+    try { return JSON.parse(localStorage.getItem('helheim-runs') || '[]'); }
+    catch (e) { return []; }
+  }
+
+  function die(cause) {
+    state.over = true;
+    Sound.death();
+    buzz('error');
+    Renderer.playerDeath(); // collapse + soul-rise; input is already locked
+    const run = { glory: state.glory, depth: state.depth, kills: state.kills,
+                  title: state.depthTitle, when: Date.now() };
+    const runs = loadRuns();
+    runs.push(run);
+    runs.sort((a, b) => b.glory - a.glory || b.depth - a.depth);
+    localStorage.setItem('helheim-runs', JSON.stringify(runs.slice(0, 10)));
+    const rank = runs.indexOf(run) < 10 ? runs.indexOf(run) + 1 : null;
+    // Let the killing blow and death animation play out before the summary.
+    setTimeout(() => {
+      if (state.over && !state.replay) UI.showDeath(cause, run, rank);
+    }, 1950);
+  }
+
+  /* ================= player actions ================= */
+
+  function validMoves() {
+    const out = [];
+    for (const n of hexNeighbors(state.player)) {
+      if (isWalkable(n, false)) out.push({ h: n, kind: 'move' });
+    }
+    return out.concat(leapTargets());
+  }
+
+  function leapTargets() {
+    const out = [];
+    if (state.player.energy < 50 || state.bonusAction) return out;
+    for (const h of hexWithin(state.player, leapRange())) {
+      if (hexDist(state.player, h) < 2) continue;
+      if (isWalkable(h, false)) out.push({ h, kind: 'leap' });
+      else if (has('thorsdescent') && foeAt(h)) out.push({ h, kind: 'leap' }); // crush from above
+    }
+    return out;
+  }
+
+  function throwTargets() {
+    const out = [];
+    for (const h of hexWithin(state.player, state.player.throwRange)) {
+      const t = tileAt(h);
+      if (!t || t.lava) continue;
+      if (hexEq(h, state.rune) || hexEq(h, state.stairs)) continue;
+      if (bombAt(h)) continue;
+      out.push({ h, kind: 'throw' });
+    }
+    return out;
+  }
+
+  function bashTargets() {
+    return hexNeighbors(state.player)
+      .filter(h => tileAt(h) && (foeAt(h) || bombAt(h)))
+      .map(h => ({ h, kind: 'bash' }));
+  }
+
+  function currentHighlights() {
+    if (!state || state.over || state.modal) return [];
+    if (mode === 'throw') return throwTargets();
+    if (mode === 'bash') return bashTargets();
+    if (mode === 'leap') return leapTargets();
+    return validMoves();
+  }
+
+  /* Stab: foes adjacent both before AND after the move die.
+     Lunge: moving along an axis kills the foe directly ahead of the destination (needs spear). */
+  function resolveMoveKills(from, to) {
+    const before = state.foes.filter(f => hexDist(f, from) === 1);
+    const after = new Set(state.foes.filter(f => hexDist(f, to) === 1));
+    for (const f of before) {
+      if (after.has(f)) killFoe(f, 'stab');
+    }
+    if (state.player.hasSpear || has('swordlunge')) {
+      const ray = hexRay(from, to);
+      if (ray) {
+        const ahead = hexAdd(to, ray.dir);
+        const target = foeAt(ahead);
+        if (target) {
+          const died = killFoe(target, 'lunge');
+          if (died && has('deeplunge')) {
+            const behind = foeAt(hexAdd(ahead, ray.dir));
+            if (behind) killFoe(behind, 'deep lunge');
+          }
+        }
+      }
+    }
+  }
+
+  function actMove(dest) {
+    const d = hexDist(state.player, dest);
+    const from = { q: state.player.q, r: state.player.r };
+    let crushTarget = null;
+    if (d === 1) {
+      if (!isWalkable(dest, false)) return false;
+      Sound.step();
+    } else if (d >= 2 && d <= leapRange()) {
+      if (state.player.energy < 50 || state.bonusAction) return false;
+      crushTarget = has('thorsdescent') ? foeAt(dest) : null;
+      if (!isWalkable(dest, false) && !crushTarget) return false;
+      state.player.energy -= 50;
+      Sound.leap();
+    } else return false;
+
+    state.player.q = dest.q;
+    state.player.r = dest.r;
+    state.lastAction = (d === 1 ? 'walk to ' : 'leap to ') + dest.q + ',' + dest.r +
+      (crushTarget ? ' (crush)' : '');
+    leapingKills = d >= 2;
+    if (crushTarget) killFoe(crushTarget, 'crushed beneath your landing', true);
+    resolveMoveKills(from, dest);
+    leapingKills = false;
+
+    if (d >= 2 && has('stagger')) {
+      for (const f of state.foes) {
+        if (hexDist(f, dest) === 1) { f.stun = 1; Renderer.fxStun(f); }
+      }
+    }
+    // Pick up spear
+    if (state.player.spearAt && hexEq(dest, state.player.spearAt)) {
+      state.player.spearAt = null;
+      state.player.hasSpear = true;
+      log('You reclaim your spear.');
+    }
+    // Stairs: descend immediately (no foe turn)
+    if (hexEq(dest, state.stairs)) {
+      endTurn(true);
+      return true;
+    }
+    // Valkyrie's Wind: a leap grants one more action (never a second leap)
+    if (d >= 2 && has('valkyrie') && !state.bonusAction) {
+      state.bonusAction = true;
+      Renderer.fxText(state.player, 'act again!', 'rgba(160,255,190,$A)');
+      log('The Valkyries bear you onward — act once more!');
+      UI.update();
+      if (window.Dev) Dev.record();
+      return true;
+    }
+    endTurn(false);
+    return true;
+  }
+
+  function actThrow(dest) {
+    const ok = throwTargets().some(t => hexEq(t.h, dest));
+    if (!ok || !state.player.hasSpear) return false;
+    Sound.throw();
+    Renderer.fxBeam(state.player, dest, 'rgba(230,235,245,$A)');
+    state.lastAction = 'throw spear to ' + dest.q + ',' + dest.r;
+    const target = foeAt(dest);
+    if (target) killFoe(target, 'spear');
+    state.player.hasSpear = false;
+    state.player.spearAt = { q: dest.q, r: dest.r };
+    // Thunderfall: the landing spear staggers everything around it
+    if (has('thunderfall')) {
+      for (const f of state.foes) {
+        if (hexDist(f, dest) === 1) { f.stun = Math.max(f.stun, 1); Renderer.fxStun(f); }
+      }
+    }
+    mode = 'idle';
+    endTurn(false);
+    return true;
+  }
+
+  /* Push whatever stands at h along dir, up to the player's bash-push distance.
+     Movement stops at the first blocker; the void and fire rifts kill. */
+  function pushEntity(h, dir) {
+    const f = foeAt(h);
+    const b = bombAt(h);
+    const steps = state.player.bashPush;
+    if (f) {
+      for (let i = 0; i < steps; i++) {
+        const dest = hexAdd(f, dir);
+        const destTile = tileAt(dest);
+        if (!destTile) {
+          killFoe(f, 'hurled into the void', true);
+          return;
+        }
+        if (destTile.lava) {
+          f.q = dest.q; f.r = dest.r; // dies in the rift
+          Renderer.fxBoom(dest);
+          killFoe(f, 'cast into the fire', true);
+          return;
+        }
+        if (!isWalkable(dest, true)) break; // blocked mid-flight
+        f.q = dest.q; f.r = dest.r;
+      }
+      f.stun = 1; Renderer.fxStun(f);
+    } else if (b) {
+      for (let i = 0; i < steps; i++) {
+        const dest = hexAdd(b, dir);
+        const destTile = tileAt(dest);
+        if (!destTile) { // knocked off the world's edge
+          state.bombs = state.bombs.filter(x => x !== b);
+          return;
+        }
+        if (destTile.lava) { // fire sets it off immediately
+          b.q = dest.q; b.r = dest.r;
+          log('The ember bursts in the fire!');
+          detonate(b);
+          return;
+        }
+        if (foeAt(dest) || bombAt(dest) || hexEq(dest, state.rune) || hexEq(dest, state.player)) break;
+        b.q = dest.q; b.r = dest.r;
+      }
+    }
+  }
+
+  function actBash(dest) {
+    if (state.player.bashCd > 0) return false;
+    let descended = false;
+    Sound.bash();
+    state.lastAction = has('sweeping') ? 'sweeping bash' : (dest ? 'bash ' + dest.q + ',' + dest.r : 'bash');
+    // Shield Wall braces BEFORE the push lands, so even a bomb you knock into
+    // lava beside yourself can be blocked.
+    if (has('shieldwall')) state.shieldBlock = 1;
+    if (has('sweeping')) {
+      for (const n of hexNeighbors(state.player)) {
+        const dir = { q: n.q - state.player.q, r: n.r - state.player.r };
+        if (foeAt(n) || bombAt(n)) pushEntity(n, dir);
+      }
+      Renderer.fxBoom(state.player);
+    } else {
+      if (!dest) return false;
+      const dir = { q: dest.q - state.player.q, r: dest.r - state.player.r };
+      if (hexDist(state.player, dest) !== 1) return false;
+      if (!foeAt(dest) && !bombAt(dest)) return false;
+      Renderer.fxSlash(dest);
+      pushEntity(dest, dir);
+      // Echo Step: the blow springs you back, away from your target
+      if (has('echostep')) {
+        const back = { q: state.player.q - dir.q, r: state.player.r - dir.r };
+        if (isWalkable(back, false)) {
+          state.player.q = back.q;
+          state.player.r = back.r;
+          if (state.player.spearAt && hexEq(back, state.player.spearAt)) {
+            state.player.spearAt = null;
+            state.player.hasSpear = true;
+            log('You spring back onto your spear and reclaim it.');
+          }
+          if (hexEq(back, state.stairs)) descended = true;
+        }
+      }
+    }
+    state.player.bashCd = state.player.bashMax;
+    mode = 'idle';
+    endTurn(descended);
+    return true;
+  }
+
+  function actWait() {
+    if (traveling || state.replay) return;
+    state.lastAction = 'hold';
+    log('You hold your ground.');
+    endTurn(false);
+  }
+
+  function actRecall() {
+    if (traveling || state.replay) return false;
+    if (!has('recall') || state.player.hasSpear || !state.player.spearAt) return false;
+    state.player.spearAt = null;
+    state.player.hasSpear = true;
+    state.lastAction = 'recall spear';
+    log('Your spear flies back to your hand.');
+    Sound.throw();
+    endTurn(false);
+    return true;
+  }
+
+  function actFollow() {
+    if (traveling || state.replay) return false;
+    if (!has('follow') || state.player.hasSpear || !state.player.spearAt) return false;
+    const s = state.player.spearAt;
+    if (foeAt(s) || bombAt(s)) { log('Something stands upon your spear — the Bifrost will not open.'); return false; }
+    Renderer.fxBeam(state.player, s, 'rgba(160,220,255,$A)');
+    state.player.q = s.q;
+    state.player.r = s.r;
+    state.player.spearAt = null;
+    state.player.hasSpear = true;
+    Renderer.setAnim('P', state.player, true); // teleport: snap, don't glide
+    state.lastAction = 'bifrost step';
+    log('You flash across the Bifrost to your spear.');
+    Sound.leap();
+    endTurn(false);
+    return true;
+  }
+
+  function actPray() {
+    if (state.runeUsed || hexDist(state.player, state.rune) !== 1) return false;
+    openBlessingModal();
+    return true;
+  }
+
+  /* ---------- auto-travel (cleared floors only) ---------- */
+
+  /* BFS shortest path over walkable tiles; returns steps after `from`, or null. */
+  function findPath(from, goalTest) {
+    if (goalTest(from)) return [];
+    const prev = new Map([[hexKey(from.q, from.r), null]]);
+    const queue = [from];
+    while (queue.length) {
+      const cur = queue.shift();
+      for (const n of hexNeighbors(cur)) {
+        const k = hexKey(n.q, n.r);
+        if (prev.has(k) || !isWalkable(n, false)) continue;
+        prev.set(k, cur);
+        if (goalTest(n)) {
+          const path = [];
+          let step = n;
+          while (step && !hexEq(step, from)) {
+            path.unshift(step);
+            step = prev.get(hexKey(step.q, step.r));
+          }
+          return path;
+        }
+        queue.push(n);
+      }
+    }
+    return null;
+  }
+
+  /* Walk the path one real turn at a time (bombs still tick); abort on damage. */
+  function autoTravel(goalTest, onArrive) {
+    const path = findPath(state.player, goalTest);
+    if (!path) { log('No clear path.'); return; }
+    if (!path.length) { if (onArrive) onArrive(); return; }
+    traveling = true;
+    const step = () => {
+      if (!traveling) return; // cancelled (e.g. new game started)
+      if (state.over || !path.length) {
+        traveling = false;
+        if (!state.over && onArrive) onArrive();
+        UI.update();
+        return;
+      }
+      const next = path.shift();
+      if (!isWalkable(next, false)) { traveling = false; UI.update(); return; }
+      const hpBefore = state.player.hp;
+      const depthBefore = state.depth;
+      actMove(next);
+      if (state.over || state.player.hp < hpBefore || state.depth !== depthBefore) {
+        traveling = false;
+        return;
+      }
+      if (!path.length) { // arrived — release input immediately
+        traveling = false;
+        if (onArrive) onArrive();
+        UI.update();
+        return;
+      }
+      setTimeout(step, 140);
+    };
+    step();
+  }
+
+  /* ================= blessing modal ================= */
+
+  function rollBlessingChoices() {
+    const p = state.player;
+    // 3 random upgrades (the two standard gifts below are always offered separately).
+    const available = BLESSINGS.filter(b => {
+      if (b.id === 'fortitude') return false;
+      if (!b.stackable && p.blessings.has(b.id)) return false;
+      if (b.canTake && !b.canTake(p)) return false;
+      return true;
+    });
+    for (let i = available.length - 1; i > 0; i--) {
+      const j = randInt(i + 1);
+      [available[i], available[j]] = [available[j], available[i]];
+    }
+    const choices = available.slice(0, 3);
+    while (choices.length < 3 && !choices.includes(FALLBACK_OPTION)) choices.push(FALLBACK_OPTION);
+    // Standard gifts: an extra heart (until capped at 8) and a full heal.
+    const fortitude = BLESSINGS.find(b => b.id === 'fortitude');
+    if (fortitude.canTake(p)) choices.push(fortitude);
+    choices.push(MEND_OPTION);
+    return choices;
+  }
+
+  function openBlessingModal() {
+    state.modal = 'blessing';
+    UI.showBlessings(rollBlessingChoices(), choice => {
+      choice.apply(state.player);
+      if (choice.id !== 'mend' && choice.id !== 'surge') state.player.blessings.add(choice.id);
+      state.runeUsed = true;
+      state.modal = null;
+      Sound.bless();
+      buzz('success');
+      state.lastAction = 'blessing: ' + choice.name;
+      log(`The runestone grants: ${choice.name}.`);
+      endTurn(false);
+    });
+  }
+
+  /* ================= turn engine ================= */
+
+  function endTurn(descended) {
+    state.turnKills = state.turnKills || 0;
+    state.bonusAction = false;
+
+    if (descended) {
+      state.turnKills = 0;
+      // Reward for passing up the runestone's gift
+      state.skipBonus = !state.runeUsed;
+      if (state.skipBonus) state.glory += 10;
+      // Pacifist descent: not one foe died on this floor — +1 glory per foe spared
+      state.pacifistBonus =
+        (state.kills === state.floorStartKills && state.foes.length > 0) ? state.foes.length : 0;
+      state.glory += state.pacifistBonus;
+      UI.update();
+      nextDepth();
+      return;
+    }
+
+    // Vigor recovery: ending your action adjacent to a foe steadies your breath.
+    if (state.foes.some(f => hexDist(f, state.player) === 1)) {
+      state.player.energy = Math.min(state.player.energy + 10, state.player.maxEnergy);
+    }
+
+    // Berserker streak
+    if (state.turnKills > 0) state.streak += 1; else state.streak = 0;
+    if (has('berserk') && !state.berserkUsed && state.streak >= 3 && state.player.hp < state.player.maxHp) {
+      state.player.hp += 1;
+      state.berserkUsed = true;
+      Renderer.fxText(state.player, '+1 ♥', 'rgba(120,255,140,$A)');
+      log('Battle-fury knits your wounds!');
+    }
+    state.turnKills = 0;
+
+    // Battle Trance: a 3-turn kill streak freezes the world for one extra action
+    if (has('battletrance') && !state.tranceUsed && state.streak >= 3) {
+      state.tranceUsed = true;
+      Renderer.fxText(state.player, 'battle trance!', 'rgba(216,178,90,$A)');
+      log('Battle-trance! The world slows — act again!');
+      UI.update();
+      if (window.Dev) Dev.record();
+      return;
+    }
+
+    bombPhase();
+    if (!state.over) foePhase();
+    state.shieldBlock = 0; // a braced shield lasts only the turn it was raised
+
+    if (state.player.bashCd > 0) state.player.bashCd -= 1;
+    UI.update();
+    if (window.Dev) Dev.record();
+  }
+
+  /* Blow up a bomb (and chain-react neighbors), damaging everything within 1 tile. */
+  function detonate(first) {
+    const queue = [first];
+    const done = new Set();
+    while (queue.length) {
+      const b = queue.shift();
+      if (done.has(b)) continue;
+      done.add(b);
+      state.bombs = state.bombs.filter(x => x !== b);
+      Renderer.fxBoom(b);
+      Sound.boom();
+      if (hexDist(state.player, b) <= 1) hurtPlayer(1, 'The ember-burst');
+      for (const f of [...state.foes]) {
+        if (hexDist(f, b) <= 1) killFoe(f, 'caught in the blast');
+      }
+      for (const other of state.bombs) {
+        if (hexDist(other, b) <= 1 && !done.has(other)) queue.push(other);
+      }
+    }
+  }
+
+  function bombPhase() {
+    const exploding = [];
+    for (const b of state.bombs) {
+      b.fuse -= 1;
+      if (b.fuse <= 0) exploding.push(b);
+    }
+    for (const b of exploding) {
+      if (state.bombs.includes(b)) detonate(b); // may already be gone via a chain
+    }
+  }
+
+  /* Line of sight along a hex axis; blocked by foes, bombs, the runestone. */
+  function clearShot(from, to, minR, maxR) {
+    const ray = hexRay(from, to);
+    if (!ray || ray.steps < minR || ray.steps > maxR) return false;
+    for (let i = 1; i < ray.steps; i++) {
+      const c = hexAdd(from, hexScale(ray.dir, i));
+      if (!tileAt(c)) return false;
+      if (foeAt(c) || bombAt(c) || hexEq(c, state.rune)) return false;
+    }
+    return true;
+  }
+
+  function stepChoices(f) {
+    return hexNeighbors(f).filter(n => isWalkable(n, true));
+  }
+
+  function moveToward(f, targetDist) {
+    const cur = hexDist(f, state.player);
+    const opts = stepChoices(f);
+    if (!opts.length) return;
+    let best, bestScore = Infinity;
+    const scored = opts.map(o => {
+      const d = hexDist(o, state.player);
+      return { o, score: Math.abs(d - targetDist) };
+    });
+    const curScore = Math.abs(cur - targetDist);
+    const better = scored.filter(s => s.score < curScore);
+    const equal = scored.filter(s => s.score === curScore);
+    let choice = null;
+    if (better.length) choice = pick(better).o;
+    else if (equal.length && Math.random() < 0.5) choice = pick(equal).o;
+    if (choice) { f.q = choice.q; f.r = choice.r; }
+  }
+
+  function seekLineOfSight(f, minR, maxR) {
+    // Prefer a step that yields a clear shot at the player.
+    const opts = stepChoices(f);
+    const good = opts.filter(o => {
+      const saved = { q: f.q, r: f.r };
+      f.q = o.q; f.r = o.r;
+      const ok = clearShot(f, state.player, minR, maxR);
+      f.q = saved.q; f.r = saved.r;
+      return ok;
+    });
+    if (good.length) {
+      const c = pick(good);
+      f.q = c.q; f.r = c.r;
+      return true;
+    }
+    return false;
+  }
+
+  /* Foe round in three strict phases (matching classic Hoplite order):
+     1. every foe declares its attack from the FROZEN board — a foe stepping
+        aside can never open a line of fire for another foe in the same round;
+     2. all declared attacks land together;
+     3. everyone who did not attack moves (or gathers power).
+     This makes the red threat markers a promise, not a guess. */
+  function foePhase() {
+    // Stun upkeep: staggered foes lose their whole round.
+    const acting = [];
+    for (const f of state.foes) {
+      if (f.stun > 0) f.stun -= 1;
+      else acting.push(f);
+    }
+
+    // Phase 1 — declare attacks.
+    const plans = [];
+    const claimed = new Set();
+    for (const f of acting) {
+      const def = FOES[f.type];
+      const dist = hexDist(f, state.player);
+      if (f.type === 'draugr') {
+        if (dist === 1) plans.push({ f, kind: 'melee' });
+      } else if (f.type === 'archer') {
+        if (clearShot(f, state.player, def.minRange, def.maxRange)) plans.push({ f, kind: 'arrow' });
+      } else if (f.type === 'volva') {
+        if (!(f.cooldown > 0) && clearShot(f, state.player, def.minRange, def.maxRange)) {
+          plans.push({ f, kind: 'searing' });
+        }
+      } else if (f.type === 'surtling') {
+        if (f.charges >= def.chargesNeeded) {
+          const spots = hexNeighbors(state.player).filter(n => {
+            const t = tileAt(n);
+            return t && !t.lava && !foeAt(n) && !bombAt(n) &&
+              !hexEq(n, state.rune) && !hexEq(n, state.stairs) &&
+              hexDist(f, n) <= def.range &&
+              hexDist(f, n) >= 2 && // never inside its own blast radius
+              !claimed.has(hexKey(n.q, n.r));
+          });
+          if (spots.length) {
+            const spot = pick(spots);
+            claimed.add(hexKey(spot.q, spot.r));
+            plans.push({ f, kind: 'ember', spot });
+          }
+        }
+      }
+    }
+
+    // Phase 2 — attacks land.
+    const attacked = new Set();
+    for (const plan of plans) {
+      if (state.over) return;
+      const f = plan.f;
+      attacked.add(f);
+      if (plan.kind === 'melee') {
+        Renderer.fxLunge(f.id, f, state.player, 0.55); // hop at the player and spring back
+        Renderer.fxSlash(state.player);
+        hurtPlayer(1, 'The draugr');
+      } else if (plan.kind === 'arrow') {
+        Renderer.fxLunge(f.id, f, state.player, 0.22);
+        Renderer.fxBeam(f, state.player, 'rgba(235,225,180,$A)');
+        hurtPlayer(1, 'An arrow');
+      } else if (plan.kind === 'searing') {
+        f.cooldown = 1; // rests for one turn after the blast
+        Renderer.fxLunge(f.id, f, state.player, 0.18);
+        Renderer.fxBeam(f, state.player, 'rgba(200,120,255,$A)');
+        hurtPlayer(1, "The völva's searing rune");
+      } else if (plan.kind === 'ember') {
+        state.bombs.push({ id: ++bombSeq, q: plan.spot.q, r: plan.spot.r, fuse: 1 });
+        Renderer.fxLunge(f.id, f, plan.spot, 0.25);
+        Renderer.fxBeam(f, plan.spot, 'rgba(255,170,60,$A)');
+        Renderer.setAnim('b_' + bombSeq, plan.spot, true);
+        f.charges = 0;
+        log('A surtling lobs a burning ember!');
+      }
+    }
+
+    // Phase 3 — non-attackers move.
+    for (const f of acting) {
+      if (state.over) return;
+      if (attacked.has(f) || !state.foes.includes(f)) continue;
+      const def = FOES[f.type];
+      const dist = hexDist(f, state.player);
+      if (f.type === 'draugr') {
+        moveToward(f, 1);
+      } else if (f.type === 'archer') {
+        if (dist === 1) {
+          const opts = stepChoices(f).filter(o => hexDist(o, state.player) > 1);
+          if (opts.length) { const c = pick(opts); f.q = c.q; f.r = c.r; }
+        } else if (!seekLineOfSight(f, def.minRange, def.maxRange)) {
+          moveToward(f, 3);
+        }
+      } else if (f.type === 'volva') {
+        if (f.cooldown > 0) {
+          f.cooldown -= 1; // gathering breath — holds her firing position
+        } else if (!seekLineOfSight(f, def.minRange, def.maxRange)) {
+          moveToward(f, 3);
+        }
+      } else if (f.type === 'surtling') {
+        f.charges = Math.min(f.charges + 1, def.chargesNeeded);
+        if (dist > def.range) moveToward(f, 2);
+        else if (dist === 1) {
+          const opts = stepChoices(f).filter(o => hexDist(o, state.player) > 1);
+          if (opts.length) { const c = pick(opts); f.q = c.q; f.r = c.r; }
+        }
+      }
+    }
+  }
+
+  /* ================= threat display ================= */
+
+  function threatSet() {
+    const out = new Set();
+    if (!state || state.over) return out;
+    for (const f of state.foes) {
+      if (f.stun > 0) continue;
+      const def = FOES[f.type];
+      if (f.type === 'draugr') {
+        for (const n of hexNeighbors(f)) {
+          const t = tileAt(n);
+          if (t && !t.lava) out.add(hexKey(n.q, n.r));
+        }
+      } else if (f.type === 'archer' || (f.type === 'volva' && !(f.cooldown > 0))) {
+        const minR = def.minRange, maxR = def.maxRange;
+        for (const d of HEX_DIRS) {
+          for (let i = 1; i <= maxR; i++) {
+            const c = hexAdd(f, hexScale(d, i));
+            if (!tileAt(c)) break;
+            if (foeAt(c) || bombAt(c) || hexEq(c, state.rune)) break;
+            if (i >= minR) out.add(hexKey(c.q, c.r));
+            if (hexEq(c, state.player)) break;
+          }
+        }
+      }
+    }
+    for (const b of state.bombs) {
+      if (b.fuse <= 1) {
+        out.add(hexKey(b.q, b.r));
+        for (const n of hexNeighbors(b)) {
+          if (tileAt(n)) out.add(hexKey(n.q, n.r));
+        }
+      }
+    }
+    return out;
+  }
+
+  /* ================= input ================= */
+
+  function clickTile(h) {
+    if (!state || state.over || state.modal || traveling || state.replay) return;
+    if (!h) return;
+
+    // Cleared floor: tap the shrine or the exit to auto-walk there.
+    if (mode === 'idle' && state.foes.length === 0) {
+      if (hexEq(h, state.stairs) && hexDist(state.player, h) > 1) {
+        log('You stride for the stair…');
+        autoTravel(t => hexEq(t, state.stairs), null);
+        return;
+      }
+      if (hexEq(h, state.rune) && !state.runeUsed && hexDist(state.player, h) > 1) {
+        log('You approach the runestone…');
+        autoTravel(t => hexDist(t, state.rune) === 1, () => actPray());
+        return;
+      }
+      if (state.player.spearAt && hexEq(h, state.player.spearAt) && hexDist(state.player, h) > 1) {
+        const target = { q: h.q, r: h.r };
+        log('You go to reclaim your spear…');
+        autoTravel(t => hexEq(t, target), null);
+        return;
+      }
+    }
+
+    if (mode === 'throw') {
+      if (!actThrow(h)) { mode = 'idle'; UI.update(); }
+      return;
+    }
+    if (mode === 'bash') {
+      if (!actBash(h)) { mode = 'idle'; UI.update(); }
+      return;
+    }
+    if (mode === 'leap') {
+      const ok = leapTargets().some(t => hexEq(t.h, h));
+      mode = 'idle';
+      if (ok) actMove(h); else UI.update();
+      return;
+    }
+    // Runestone: pray when adjacent
+    if (hexEq(h, state.rune)) {
+      if (state.runeUsed) { log('The runestone is spent.'); return; }
+      if (hexDist(state.player, state.rune) === 1) actPray();
+      else log('Stand beside the runestone to invoke it.');
+      return;
+    }
+    if (hexEq(h, state.player)) { actWait(); return; }
+    actMove(h);
+  }
+
+  function setMode(m) {
+    if (!state || state.over || state.modal || traveling || state.replay) return;
+    if (m === 'throw' && (!state.player.hasSpear)) { log('Your spear is not in hand.'); return; }
+    if (m === 'bash' && state.player.bashCd > 0) { log('Your shield arm is still recovering.'); return; }
+    if (m === 'leap' && state.bonusAction) { log('The Valkyries grant no second leap.'); return; }
+    if (m === 'leap' && state.player.energy < 50) { log('Too winded to leap — you need 50 vigor.'); return; }
+    if (m === 'bash' && has('sweeping')) { actBash(null); return; }
+    mode = (mode === m) ? 'idle' : m;
+    UI.update();
+  }
+
+  function getMode() { return mode; }
+
+  return {
+    get state() { return state; },
+    set state(s) { state = s; },
+    newGame, clickTile, setMode, getMode, loadRuns,
+    actWait, actRecall, actFollow, actPray,
+    currentHighlights, threatSet,
+    tileAt, foeAt, bombAt,
+    Sound,
+    has, leapRange,
+  };
+})();

@@ -1,0 +1,274 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		DEADBEEF0000000000000021 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEADBEEF0000000000000007 /* AppDelegate.swift */; };
+		DEADBEEF0000000000000022 /* GameViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEADBEEF0000000000000008 /* GameViewController.swift */; };
+		DEADBEEF0000000000000023 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DEADBEEF000000000000000A /* Assets.xcassets */; };
+		DEADBEEF0000000000000024 /* index.html in Resources */ = {isa = PBXBuildFile; fileRef = DEADBEEF000000000000000B /* index.html */; };
+		DEADBEEF0000000000000025 /* css in Resources */ = {isa = PBXBuildFile; fileRef = DEADBEEF000000000000000C /* css */; };
+		DEADBEEF0000000000000026 /* js in Resources */ = {isa = PBXBuildFile; fileRef = DEADBEEF000000000000000D /* js */; };
+		DEADBEEF0000000000000027 /* icons in Resources */ = {isa = PBXBuildFile; fileRef = DEADBEEF000000000000000E /* icons */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		B35EC7C0300DF470007F963C /* TestPlan.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = TestPlan.xctestplan; sourceTree = "<group>"; };
+		DEADBEEF0000000000000006 /* Helheim.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Helheim.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		DEADBEEF0000000000000007 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		DEADBEEF0000000000000008 /* GameViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameViewController.swift; sourceTree = "<group>"; };
+		DEADBEEF0000000000000009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		DEADBEEF000000000000000A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		DEADBEEF000000000000000B /* index.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = index.html; path = ../index.html; sourceTree = SOURCE_ROOT; };
+		DEADBEEF000000000000000C /* css */ = {isa = PBXFileReference; lastKnownFileType = folder; name = css; path = ../css; sourceTree = SOURCE_ROOT; };
+		DEADBEEF000000000000000D /* js */ = {isa = PBXFileReference; lastKnownFileType = folder; name = js; path = ../js; sourceTree = SOURCE_ROOT; };
+		DEADBEEF000000000000000E /* icons */ = {isa = PBXFileReference; lastKnownFileType = folder; name = icons; path = ../icons; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		DEADBEEF0000000000000013 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		DEADBEEF0000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				B35EC7C0300DF470007F963C /* TestPlan.xctestplan */,
+				DEADBEEF0000000000000004 /* Helheim */,
+				DEADBEEF0000000000000005 /* Shared Web Game */,
+				DEADBEEF0000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DEADBEEF0000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				DEADBEEF0000000000000006 /* Helheim.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		DEADBEEF0000000000000004 /* Helheim */ = {
+			isa = PBXGroup;
+			children = (
+				DEADBEEF0000000000000007 /* AppDelegate.swift */,
+				DEADBEEF0000000000000008 /* GameViewController.swift */,
+				DEADBEEF0000000000000009 /* Info.plist */,
+				DEADBEEF000000000000000A /* Assets.xcassets */,
+			);
+			path = Helheim;
+			sourceTree = "<group>";
+		};
+		DEADBEEF0000000000000005 /* Shared Web Game */ = {
+			isa = PBXGroup;
+			children = (
+				DEADBEEF000000000000000B /* index.html */,
+				DEADBEEF000000000000000C /* css */,
+				DEADBEEF000000000000000D /* js */,
+				DEADBEEF000000000000000E /* icons */,
+			);
+			name = "Shared Web Game";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		DEADBEEF0000000000000010 /* Helheim */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DEADBEEF0000000000000015 /* Build configuration list for PBXNativeTarget "Helheim" */;
+			buildPhases = (
+				DEADBEEF0000000000000011 /* Sources */,
+				DEADBEEF0000000000000013 /* Frameworks */,
+				DEADBEEF0000000000000012 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Helheim;
+			productName = Helheim;
+			productReference = DEADBEEF0000000000000006 /* Helheim.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		DEADBEEF0000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					DEADBEEF0000000000000010 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = DEADBEEF0000000000000014 /* Build configuration list for PBXProject "Helheim" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = DEADBEEF0000000000000002;
+			productRefGroup = DEADBEEF0000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DEADBEEF0000000000000010 /* Helheim */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		DEADBEEF0000000000000012 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DEADBEEF0000000000000023 /* Assets.xcassets in Resources */,
+				DEADBEEF0000000000000024 /* index.html in Resources */,
+				DEADBEEF0000000000000025 /* css in Resources */,
+				DEADBEEF0000000000000026 /* js in Resources */,
+				DEADBEEF0000000000000027 /* icons in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		DEADBEEF0000000000000011 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DEADBEEF0000000000000021 /* AppDelegate.swift in Sources */,
+				DEADBEEF0000000000000022 /* GameViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		DEADBEEF0000000000000016 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		DEADBEEF0000000000000017 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		DEADBEEF0000000000000018 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DGL8J3XWSG;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Helheim/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.paulweinert.helheim;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		DEADBEEF0000000000000019 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DGL8J3XWSG;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Helheim/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.paulweinert.helheim;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		DEADBEEF0000000000000014 /* Build configuration list for PBXProject "Helheim" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DEADBEEF0000000000000016 /* Debug */,
+				DEADBEEF0000000000000017 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DEADBEEF0000000000000015 /* Build configuration list for PBXNativeTarget "Helheim" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DEADBEEF0000000000000018 /* Debug */,
+				DEADBEEF0000000000000019 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = DEADBEEF0000000000000001 /* Project object */;
+}

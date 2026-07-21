@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>Helheim — An Endless Viking Saga</title>
+<meta name="description" content="Helheim: a turn-based hex-grid roguelike of endless viking conquest. Descend forever into the Norse underworld.">
+<meta name="theme-color" content="#171b24">
+<link rel="stylesheet" href="css/style.css?v=15">
+<link rel="icon" href="icons/icon-192.png">
+</head>
+<body>
+
+<header>
+  <div class="title-block">
+    <h1>ᚺ HELHEIM ᚺ</h1>
+    <div class="subtitle">An Endless Viking Saga</div>
+  </div>
+  <div class="hud">
+    <div class="hud-item">
+      <span class="hud-label">Depth</span>
+      <span class="hud-value" id="depth">1</span>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">Hearts</span>
+      <span id="hearts"></span>
+    </div>
+    <div class="hud-item vigor">
+      <span class="hud-label">Vigor</span>
+      <div class="vigor-bar"><div id="vigor-fill"></div></div>
+      <span class="hud-small" id="vigor-text"></span>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">Glory</span>
+      <span class="hud-value" id="kills">0</span>
+    </div>
+    <button id="btn-mute" class="icon-btn" title="Toggle sound">🔊</button>
+    <button id="btn-help" class="icon-btn" title="How to play">?</button>
+  </div>
+</header>
+
+<main>
+  <div id="board-wrap">
+    <canvas id="board"></canvas>
+    <div id="depth-banner"></div>
+    <div id="pray-hint" style="display:none">✧ Tap the runestone to receive a blessing ✧</div>
+  </div>
+
+  <div id="controls">
+    <button id="btn-throw" class="action-btn">
+      <span class="icon">🔱</span><span class="label">Throw Spear</span><span class="sub">range 2</span>
+      <kbd>T</kbd>
+    </button>
+    <button id="btn-bash" class="action-btn">
+      <span class="icon">🛡️</span><span class="label">Shield Bash</span><span class="sub">ready</span>
+      <kbd>B</kbd>
+    </button>
+    <button id="btn-leap" class="action-btn">
+      <span class="icon">🦅</span><span class="label">Leap</span><span class="sub">50 vigor</span>
+      <kbd>L</kbd>
+    </button>
+    <button id="btn-recall" class="action-btn" style="display:none">
+      <span class="icon">🌀</span><span class="label">Recall Spear</span><span class="sub">runic</span>
+      <kbd>R</kbd>
+    </button>
+    <button id="btn-follow" class="action-btn" style="display:none">
+      <span class="icon">🌈</span><span class="label">Bifrost Step</span><span class="sub">to spear</span>
+      <kbd>F</kbd>
+    </button>
+    <button id="btn-wait" class="action-btn">
+      <span class="icon">⏳</span><span class="label">Hold</span><span class="sub">pass turn</span>
+      <kbd>W</kbd>
+    </button>
+    <button id="btn-blessings" class="action-btn">
+      <span class="icon">ᛒ</span><span class="label">Blessings</span><span class="sub">none</span>
+    </button>
+  </div>
+
+  <div id="log">Welcome, raider.</div>
+  <div id="blessing-chips"></div>
+  <div id="tooltip"></div>
+</main>
+
+<!-- Intro -->
+<div class="modal-backdrop" id="modal-intro">
+  <div class="modal">
+    <h2>ᚺ HELHEIM ᚺ</h2>
+    <p class="modal-tagline">The gates of the underworld stand open. There is no bottom — only glory.</p>
+    <div class="help-cols">
+      <div>
+        <h3>Move &amp; Kill</h3>
+        <ul>
+          <li><b>Tap an adjacent tile</b> to walk. Foes adjacent to you <i>before and after</i> a move are cut down.</li>
+          <li>Move <b>straight at a foe</b> to lunge it with your spear.</li>
+          <li>Use <b>Leap</b> (or tap a tile 2 away) to jump for 50 vigor. Kills restore 15 vigor (none for kills made mid-leap), standing beside foes restores 10, and it refills every depth.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Fight Smart</h3>
+        <ul>
+          <li><b>Throw</b> your spear at anything in range — then go retrieve it.</li>
+          <li><b>Bash</b> foes into fire rifts or off the world's edge.</li>
+          <li>Beware embers: they burst one turn after landing.</li>
+          <li>Invoke the <b>runestone</b> on every depth for one blessing — a heart or full heal is always on offer. Descend without it for <b>+10 glory</b>.</li>
+          <li>Or fight nothing at all: descend without a single foe dying for <b>+1 glory per foe spared</b>.</li>
+        </ul>
+      </div>
+    </div>
+    <div id="leaderboard"></div>
+    <button class="big-btn" id="intro-start">⚔ Begin the Descent ⚔</button>
+  </div>
+</div>
+
+<!-- Blessing choice -->
+<div class="modal-backdrop" id="modal-blessing">
+  <div class="modal">
+    <h2>The Runestone Wakens</h2>
+    <p class="modal-tagline">The old gods offer one gift. Choose.</p>
+    <div id="blessing-list"></div>
+  </div>
+</div>
+
+<!-- Death -->
+<div class="modal-backdrop" id="modal-death">
+  <div class="modal">
+    <h2>Valhalla Calls</h2>
+    <p class="modal-tagline" id="death-cause"></p>
+    <p id="death-stats"></p>
+    <button class="big-btn" id="death-restart">Return to the Longhouse</button>
+  </div>
+</div>
+
+<!-- Owned blessings (native shell: shown as a popup instead of chips) -->
+<div class="modal-backdrop" id="modal-runes">
+  <div class="modal">
+    <h2>Your Blessings</h2>
+    <div id="blessing-owned"></div>
+    <button class="big-btn" id="runes-close">Back to Battle</button>
+  </div>
+</div>
+
+<!-- Help -->
+<div class="modal-backdrop" id="modal-help">
+  <div class="modal">
+    <h2>The Skald's Counsel</h2>
+    <div class="help-cols">
+      <div>
+        <h3>Your Arts</h3>
+        <ul>
+          <li><b>Stab</b> — foes adjacent before <i>and</i> after your move die.</li>
+          <li><b>Lunge</b> — move straight toward a foe to skewer it (needs spear in hand).</li>
+          <li><b>Leap</b> (L) — jump 2 tiles for 50 vigor. Kills restore 15 vigor — but not kills made mid-leap. Standing next to foes restores 10 a turn, and vigor refills at each new depth.</li>
+          <li><b>Throw</b> (T) — hurl your spear up to its range; walk onto it to reclaim it. No spear, no lunge.</li>
+          <li><b>Bash</b> (B) — knock a neighbor back one tile and stun it. Fire rifts and the void kill instantly.</li>
+          <li><b>Hold</b> (W / Space) — pass your turn.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>The Dead of Helheim</h3>
+        <ul>
+          <li><b>Draugr</b> — strikes any adjacent tile.</li>
+          <li><b>Bone Archer</b> — shoots straight lines, 2–5 tiles. Get close or break its line.</li>
+          <li><b>Surtling</b> — lobs embers that burst one turn later, scorching adjacent tiles. Bash embers away!</li>
+          <li><b>Völva</b> — sears a line up to 5 tiles whenever her staff glows; rests one turn after each blast.</li>
+          <li><b>Ancients</b> (gold ring) — take two blows.</li>
+        </ul>
+        <p class="fine">Red dashes mark threatened tiles. Glory: +1 per kill, +10 for descending without touching the runestone, and +1 per living foe if you descend with none dead — pacifist descents are a real path. The dungeon has no end — each depth spawns more and deadlier foes. How deep can you go?</p>
+      </div>
+    </div>
+    <button class="big-btn" id="help-close">Back to Battle</button>
+  </div>
+</div>
+
+<footer><span id="version"></span></footer>
+
+<script src="js/hex.js?v=15"></script>
+<script src="js/data.js?v=15"></script>
+<script src="js/level.js?v=15"></script>
+<script src="js/render.js?v=15"></script>
+<script src="js/game.js?v=15"></script>
+<script src="js/ui.js?v=15"></script>
+<script src="js/dev.js?v=15"></script>
+</body>
+</html>
