@@ -10,49 +10,180 @@ const Game = (() => {
 
   /* ================= sound (tiny WebAudio synth, no assets) ================= */
   const Sound = (() => {
-    let ac = null, muted = localStorage.getItem('helheim-muted') === '1';
+    let ac = null, master = null, echo = null, nbuf = null;
+    let muted = localStorage.getItem('helheim-muted') === '1';
+
+    // Lazily create/resume the context and build the master bus once. Chain:
+    // voices -> master gain (0.9) -> gentle limiter -> speakers, so layered cues
+    // (death, boom) stay loud but never clip. A short darkened feedback delay is
+    // offered as a *send* for the bigger, spacier cues.
     function ctx() {
-      if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+      if (!ac) {
+        ac = new (window.AudioContext || window.webkitAudioContext)();
+        master = ac.createGain();
+        master.gain.value = 0.9;
+        const limiter = ac.createDynamicsCompressor();
+        limiter.threshold.value = -6;
+        limiter.knee.value = 0;
+        limiter.ratio.value = 20;
+        limiter.attack.value = 0.003;
+        limiter.release.value = 0.12;
+        master.connect(limiter);
+        limiter.connect(ac.destination);
+        const din = ac.createDelay(0.5);
+        din.delayTime.value = 0.11;
+        const fb = ac.createGain(); fb.gain.value = 0.3;      // feedback amount
+        const dark = ac.createBiquadFilter();                 // darken each repeat
+        dark.type = 'lowpass'; dark.frequency.value = 2200;
+        const wet = ac.createGain(); wet.gain.value = 0.5;    // echo level into mix
+        din.connect(dark); dark.connect(fb); fb.connect(din); // feedback loop
+        dark.connect(wet); wet.connect(master);
+        echo = din;
+      }
       if (ac.state === 'suspended') ac.resume();
       return ac;
     }
-    function tone(freq, dur, type, vol, slide) {
-      if (muted) return;
-      try {
-        const a = ctx();
-        const o = a.createOscillator(), g = a.createGain();
-        o.type = type; o.frequency.value = freq;
-        if (slide) o.frequency.exponentialRampToValueAtTime(slide, a.currentTime + dur);
-        g.gain.value = vol;
-        g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
-        o.connect(g); g.connect(a.destination);
-        o.start(); o.stop(a.currentTime + dur);
-      } catch (e) { /* audio unavailable */ }
+
+    // One reusable 2s white-noise buffer; bursts loop and shape slices of it.
+    function noiseBuf() {
+      if (!nbuf) {
+        nbuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+        const d = nbuf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      }
+      return nbuf;
     }
-    function noise(dur, vol) {
-      if (muted) return;
-      try {
-        const a = ctx();
-        const buf = a.createBuffer(1, a.sampleRate * dur, a.sampleRate);
-        const d = buf.getChannelData(0);
-        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
-        const src = a.createBufferSource(); src.buffer = buf;
-        const g = a.createGain(); g.gain.value = vol;
-        src.connect(g); g.connect(a.destination);
-        src.start();
-      } catch (e) { /* audio unavailable */ }
+
+    // Route a finished voice to the dry master plus (optionally) the echo bus.
+    function route(node, send) {
+      node.connect(master);
+      if (send) { const s = ac.createGain(); s.gain.value = send; node.connect(s); s.connect(echo); }
     }
+
+    // A pitched "hit": glide f0->f1 (a metallic clang drops, a whoosh rises),
+    // fast attack + exponential decay, optional filter, optional echo send.
+    function hit(o) {
+      const a = ctx(), t = a.currentTime + (o.at || 0);
+      const osc = a.createOscillator();
+      osc.type = o.type || 'sine';
+      if (o.detune) osc.detune.value = o.detune;
+      const f1 = o.f1 || o.f0;
+      osc.frequency.setValueAtTime(o.f0, t);
+      if (f1 !== o.f0) osc.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + o.dur);
+      let n = osc;
+      if (o.filter) {
+        const flt = a.createBiquadFilter();
+        flt.type = o.filter;
+        flt.frequency.value = o.cutoff || 1000;
+        if (o.q) flt.Q.value = o.q;
+        osc.connect(flt); n = flt;
+      }
+      const g = a.createGain();
+      const atk = o.atk || 0.004;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(o.vol, t + atk);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + o.dur);
+      n.connect(g);
+      route(g, o.echo || 0);
+      osc.start(t); osc.stop(t + o.dur + 0.03);
+    }
+
+    // A filtered noise burst shaped transient -> body -> tail, with an optional
+    // cutoff sweep (f0->f1). Backbone of slashes, impacts, whooshes, blasts.
+    function burst(o) {
+      const a = ctx(), t = a.currentTime + (o.at || 0);
+      const src = a.createBufferSource(); src.buffer = noiseBuf(); src.loop = true;
+      const flt = a.createBiquadFilter();
+      flt.type = o.filter || 'lowpass';
+      flt.frequency.setValueAtTime(o.f0, t);
+      if (o.f1 && o.f1 !== o.f0) flt.frequency.exponentialRampToValueAtTime(Math.max(20, o.f1), t + o.dur);
+      if (o.q) flt.Q.value = o.q;
+      const g = a.createGain();
+      const atk = o.atk || 0.002;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(o.vol, t + atk);         // transient
+      if (o.hold) g.gain.setValueAtTime(o.vol, t + atk + o.hold);  // body
+      g.gain.exponentialRampToValueAtTime(0.0001, t + o.dur);      // tail
+      src.connect(flt); flt.connect(g);
+      route(g, o.echo || 0);
+      src.start(t); src.stop(t + o.dur + 0.05);
+    }
+
+    // A struck bell / knell: fundamental + octave + an inharmonic 2.76x clang
+    // + a low hum partial. Rings for bless (bright) and the death dirge (dark).
+    function bell(f, at, dur, vol, ech) {
+      hit({ f0: f,        type: 'sine', dur: dur,       vol: vol,        atk: 0.003, at: at, echo: ech });
+      hit({ f0: f * 2,    type: 'sine', dur: dur * 0.7, vol: vol * 0.5,  atk: 0.003, at: at, echo: ech });
+      hit({ f0: f * 2.76, type: 'sine', dur: dur * 0.5, vol: vol * 0.28, atk: 0.002, at: at, echo: ech });
+      hit({ f0: f * 0.5,  type: 'sine', dur: dur,       vol: vol * 0.4,  atk: 0.004, at: at, echo: ech });
+    }
+
+    // Every cue is guarded: honour mute, and never let an audio error throw.
+    function play(fn) { if (muted) return; try { ctx(); fn(); } catch (e) { /* audio unavailable */ } }
+
     return {
-      kill: () => { tone(660, 0.12, 'square', 0.05, 220); noise(0.08, 0.05); },
-      hurt: () => tone(140, 0.25, 'sawtooth', 0.09, 70),
-      step: () => tone(220, 0.05, 'triangle', 0.025),
-      leap: () => tone(330, 0.18, 'sine', 0.05, 660),
-      bash: () => { tone(180, 0.15, 'square', 0.07, 90); noise(0.1, 0.06); },
-      throw: () => tone(520, 0.12, 'sine', 0.05, 260),
-      boom: () => { noise(0.35, 0.12); tone(90, 0.35, 'sine', 0.1, 40); },
-      bless: () => { tone(523, 0.3, 'sine', 0.05); setTimeout(() => tone(784, 0.4, 'sine', 0.05), 120); },
-      descend: () => tone(196, 0.5, 'sine', 0.08, 98),
-      death: () => { tone(220, 0.8, 'sawtooth', 0.08, 55); noise(0.5, 0.08); },
+      // bright metallic clang dropping in pitch + a sharp chink
+      kill: () => play(() => {
+        hit({ f0: 1000, f1: 340, type: 'triangle', dur: 0.14, vol: 0.05, echo: 0.12 });
+        hit({ f0: 1500, f1: 520, type: 'square',   dur: 0.11, vol: 0.028, echo: 0.1 });
+        burst({ filter: 'bandpass', f0: 3600, q: 2.2, dur: 0.07, vol: 0.05, atk: 0.001 });
+      }),
+      // dark, rough, downward grunt — a blow the hero takes
+      hurt: () => play(() => {
+        hit({ f0: 200, f1: 70, type: 'sawtooth', filter: 'lowpass', cutoff: 520, q: 1, dur: 0.22, vol: 0.09 });
+        burst({ filter: 'lowpass', f0: 420, f1: 120, dur: 0.14, vol: 0.05, atk: 0.002, hold: 0.02 });
+      }),
+      // soft, dull footfall
+      step: () => play(() => {
+        burst({ filter: 'lowpass', f0: 900, f1: 380, q: 0.6, dur: 0.05, vol: 0.03 });
+        hit({ f0: 120, type: 'sine', dur: 0.05, vol: 0.02 });
+      }),
+      // airy upward whoosh — a rising arc
+      leap: () => play(() => {
+        hit({ f0: 240, f1: 720, type: 'triangle', dur: 0.19, vol: 0.05, atk: 0.02 });
+        burst({ filter: 'bandpass', f0: 300, f1: 1400, q: 0.9, dur: 0.18, vol: 0.045, atk: 0.03 });
+      }),
+      // heavy shield shove — tight low thud + woody crack
+      bash: () => play(() => {
+        hit({ f0: 190, f1: 60, type: 'sine',   dur: 0.16, vol: 0.09 });
+        hit({ f0: 150, f1: 70, type: 'square', filter: 'lowpass', cutoff: 600, dur: 0.12, vol: 0.05 });
+        burst({ filter: 'bandpass', f0: 1800, f1: 600, q: 1.5, dur: 0.09, vol: 0.07, atk: 0.001 });
+      }),
+      // spear/axe release — a crisp swish and a departing tick
+      throw: () => play(() => {
+        burst({ filter: 'bandpass', f0: 800, f1: 2600, q: 1.2, dur: 0.12, vol: 0.05, atk: 0.02 });
+        hit({ f0: 900, f1: 1500, type: 'sine', dur: 0.1, vol: 0.035, atk: 0.006 });
+      }),
+      // explosion — bright crack, dark blast body, deep sub drop, echo
+      boom: () => play(() => {
+        burst({ filter: 'highpass', f0: 3000, dur: 0.05, vol: 0.06, atk: 0.001 });
+        burst({ filter: 'lowpass', f0: 2200, f1: 120, dur: 0.36, vol: 0.11, atk: 0.002, hold: 0.02, echo: 0.15 });
+        hit({ f0: 110, f1: 38, type: 'sine', dur: 0.38, vol: 0.11, echo: 0.1 });
+      }),
+      // sacred rising bell shimmer (C-E-G + a top sparkle)
+      bless: () => play(() => {
+        bell(523, 0.00, 0.34, 0.045, 0.20);
+        bell(659, 0.09, 0.34, 0.045, 0.20);
+        bell(784, 0.18, 0.38, 0.050, 0.22);
+        hit({ f0: 1047, type: 'sine', dur: 0.3, vol: 0.03, at: 0.27, echo: 0.28 });
+      }),
+      // stairs down — ominous, smooth, resonant descent
+      descend: () => play(() => {
+        hit({ f0: 200, f1: 70, type: 'sine',     dur: 0.5, vol: 0.08, echo: 0.12 });
+        hit({ f0: 200, f1: 70, type: 'sawtooth', filter: 'lowpass', cutoff: 300, dur: 0.5, vol: 0.04, echo: 0.1 });
+        burst({ filter: 'lowpass', f0: 200, f1: 80, dur: 0.5, vol: 0.03 });
+      }),
+      // the fall (~1.7s): a struck war-horn, a sub-drone abyss, and a
+      // descending funeral dirge of knells, all bathed in echo
+      death: () => play(() => {
+        burst({ filter: 'lowpass', f0: 1600, f1: 200, dur: 0.6, vol: 0.09, atk: 0.002, hold: 0.03, echo: 0.22 });
+        hit({ f0: 165, f1: 150, type: 'sawtooth', filter: 'lowpass', cutoff: 850, q: 0.7, dur: 1.4, vol: 0.09, atk: 0.06, echo: 0.28 });
+        hit({ f0: 247, f1: 224, type: 'sawtooth', filter: 'lowpass', cutoff: 1100, dur: 1.2, vol: 0.04, atk: 0.08, echo: 0.25 });
+        hit({ f0: 60, f1: 44, type: 'sine', dur: 1.55, vol: 0.07, atk: 0.12, echo: 0.15 });
+        bell(330, 0.08, 0.65, 0.050, 0.28);
+        bell(262, 0.50, 0.70, 0.050, 0.28);
+        bell(196, 0.92, 0.80, 0.055, 0.32);
+      }),
       toggleMute: () => { muted = !muted; localStorage.setItem('helheim-muted', muted ? '1' : '0'); return muted; },
       isMuted: () => muted,
     };
@@ -104,6 +235,7 @@ const Game = (() => {
         hasSpear: true, spearAt: null,
         throwRange: 2, leapBonus: 0,
         blessings: new Set(),
+        blessingCounts: {}, // id -> times taken (for the ×N stack indicator)
       },
       kills: 0, glory: 0, streak: 0, berserkUsed: false,
       tranceUsed: false, bonusAction: false, shieldBlock: 0,
@@ -117,7 +249,7 @@ const Game = (() => {
 
   function nextDepth() {
     state.depth += 1;
-    state.depthTitle = rollDepthName();
+    state.depthTitle = depthName(state.depth);
     const lvl = generateLevel(state.depth);
     state.tiles = lvl.tiles;
     state.stairs = lvl.stairs;
@@ -151,11 +283,12 @@ const Game = (() => {
     state.skipBonus = false;
     state.pacifistBonus = 0;
     state.floorStartKills = state.kills;
+    const depthLabel = state.depthTitle ? `Depth ${state.depth} — ${state.depthTitle}` : `Depth ${state.depth}`;
     if (extras.length) {
       Renderer.fxText(state.player, `+${bonusTotal} glory`, 'rgba(216,178,90,$A)');
-      log(`Depth ${state.depth} — ${state.depthTitle} · glory: ${extras.join(', ')}!`);
+      log(`${depthLabel} · glory: ${extras.join(', ')}!`);
     } else {
-      log(`Depth ${state.depth} — ${state.depthTitle}`);
+      log(depthLabel);
     }
     Sound.descend();
     UI.flashDepth(state.depth, state.depthTitle);
@@ -197,6 +330,7 @@ const Game = (() => {
   }
 
   function hurtPlayer(n, source) {
+    if (state.over) return; // already fallen — ignore further blows (no double-death, no duplicate leaderboard entry)
     if (state.shieldBlock > 0) {
       state.shieldBlock -= 1;
       Sound.bash();
@@ -406,22 +540,25 @@ const Game = (() => {
       }
       f.stun = 1; Renderer.fxStun(f);
     } else if (b) {
+      // A bashed ember is spiked away and bursts ON IMPACT, driven as far from
+      // you as it can go. If something blocks it, it detonates against that tile
+      // (the crowd behind it) — never left sitting on its fuse beside you.
+      let impact = null;
       for (let i = 0; i < steps; i++) {
         const dest = hexAdd(b, dir);
         const destTile = tileAt(dest);
-        if (!destTile) { // knocked off the world's edge
+        if (!destTile) { // knocked off the world's edge — gone, no blast
           state.bombs = state.bombs.filter(x => x !== b);
           return;
         }
-        if (destTile.lava) { // fire sets it off immediately
-          b.q = dest.q; b.r = dest.r;
-          log('The ember bursts in the fire!');
-          detonate(b);
-          return;
-        }
-        if (foeAt(dest) || bombAt(dest) || hexEq(dest, state.rune) || hexEq(dest, state.player)) break;
-        b.q = dest.q; b.r = dest.r;
+        if (destTile.lava) { b.q = dest.q; b.r = dest.r; break; } // bursts in the fire
+        if (foeAt(dest) || bombAt(dest) || hexEq(dest, state.rune)) { impact = dest; break; }
+        b.q = dest.q; b.r = dest.r; // free tile — keep sliding
       }
+      if (impact) { b.q = impact.q; b.r = impact.r; } // center the burst on the obstacle/crowd
+      log('You spike the ember away — it bursts!');
+      detonate(b);
+      return;
     }
   }
 
@@ -878,7 +1015,8 @@ const Game = (() => {
             if (!tileAt(c)) break;
             if (foeAt(c) || bombAt(c) || hexEq(c, state.rune)) break;
             if (i >= minR) out.add(hexKey(c.q, c.r));
-            if (hexEq(c, state.player)) break;
+            // Don't stop at the player — show the foe's full firing lane,
+            // including the tiles behind the player on the same line.
           }
         }
       }

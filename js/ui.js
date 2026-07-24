@@ -94,7 +94,7 @@ const UI = (() => {
 
   function flashDepth(depth, name) {
     const el = $('depth-banner');
-    el.innerHTML = `<div class="d-num">Depth ${depth}</div><div class="d-name">${name}</div>`;
+    el.innerHTML = `<div class="d-num">Depth ${depth}</div>` + (name ? `<div class="d-name">${name}</div>` : '');
     el.classList.remove('show');
     void el.offsetWidth;
     el.classList.add('show');

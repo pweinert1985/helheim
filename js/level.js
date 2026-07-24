@@ -70,8 +70,11 @@ function generateLevel(depth) {
     if (!reach.has(hexKey(stairs.q, stairs.r)) || !runeReachable) continue;
 
     // Foes: spawn on reachable ground, away from the start.
-    const foeCount = Math.min(3 + Math.floor(depth * 0.7), 11);
-    const eliteChance = Math.max(0, Math.min(0.5, (depth - 5) * 0.05));
+    // Gentler curve (v16): foe count grows with sqrt(depth) so the post-floor-8
+    // crowding spike is flattened and the 11-foe ceiling now arrives ~depth 25.
+    // Ancients scale the most gently of all — the biggest difficulty multiplier.
+    const foeCount = Math.min(11, 2 + Math.floor(1.8 * Math.sqrt(depth)));
+    const eliteChance = Math.max(0, Math.min(0.25, (depth - 8) * 0.02));
     const pool = foePool(depth);
     const spawnCandidates = cells.filter(c => {
       const k = hexKey(c.q, c.r);

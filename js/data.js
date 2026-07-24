@@ -2,7 +2,7 @@
 'use strict';
 
 /* Keep in sync with the ?v=N cache tags in index.html when shipping. */
-const GAME_VERSION = 'v15';
+const GAME_VERSION = 'v22';
 
 const BLESSINGS = [
   {
@@ -14,10 +14,9 @@ const BLESSINGS = [
   },
   {
     id: 'vigor', name: "Odin's Breath",
-    desc: '+25 maximum vigor.',
-    stackable: true,
-    canTake: p => p.maxEnergy < 200,
-    apply: p => { p.maxEnergy += 25; p.energy = Math.min(p.energy + 25, p.maxEnergy); },
+    desc: '+50 maximum vigor.',
+    stackable: false,
+    apply: p => { p.maxEnergy += 50; p.energy = Math.min(p.energy + 50, p.maxEnergy); },
   },
   {
     id: 'bloodlust', name: 'Bloodlust of Fenrir',
@@ -171,40 +170,69 @@ const FOES = {
   },
 };
 
-/* Spawn pool weights by depth. */
+/* Spawn pool weights by depth (v16 — gentler type ramp).
+   Draugr is a flat anchor and archer freezes at weight 8 by depth 6, so the
+   easy pair stays a constant 18: only the hard types' share grows, and only
+   after their later intro depths (surtling 6, volva 9). This keeps the hard-
+   type fraction monotonic with no dips, and the early floors pure melee/archer. */
 function foePool(depth) {
   const pool = [
     ['draugr', 10],
-    ['archer', 2 + Math.min(depth, 8)],
+    ['archer', 2 + Math.min(depth, 6)],
   ];
-  if (depth >= 3) pool.push(['surtling', 1 + Math.min(depth - 2, 6)]);
-  if (depth >= 5) pool.push(['volva', 1 + Math.min(depth - 4, 6)]);
+  if (depth >= 6) pool.push(['surtling', 1 + Math.min(Math.floor((depth - 6) / 2), 5)]);
+  if (depth >= 9) pool.push(['volva', 1 + Math.min(Math.floor((depth - 9) / 2), 5)]);
   return pool;
 }
 
-/* Depth names are rolled fresh each floor from viking word sets —
-   occasionally grand, frequently a little silly. */
-const DEPTH_ADJ = [
-  'Frost-Bitten', 'Mead-Soaked', 'Wolf-Haunted', 'Ever-Burning', 'Thrice-Cursed',
-  'Moss-Bearded', 'Skull-Paved', 'Whale-Boned', 'Rune-Scarred', 'Troll-Gnawed',
-  'Ash-Choked', 'Salt-Crusted', 'Snoring', 'Half-Sunken', 'Elk-Trampled',
-];
-const DEPTH_PLACE = [
-  'Halls', 'Warrens', 'Barrows', 'Mead-Hall', 'Kennels', 'Forge', 'Larder',
-  'Bathhouse', 'Boneyard', 'Root-Cellar', 'Docks', 'Throne-Room', 'Crypt',
-  'Sauna', 'Armory', 'Brewery',
-];
-const DEPTH_OWNER = [
-  'of the Drowned King', 'of Broken Oaths', 'of the Angry Skald',
-  'of a Thousand Sorrows', 'of the Sleeping Serpent', 'of Odin’s Lost Eye',
-  'of the Grumpy Jarl', 'of Unwashed Berserkers', 'of the Pale Völva',
-  'of Loki’s Debts', 'of Forgotten Mead', 'of the Last Longship',
-  'of the Weeping Troll', 'of Nine Regrets', 'of the Bottomless Horn',
+/* Fixed depth names for depths 1–100 (a steady descent from the barrow-door
+   toward the abyss). Past depth 100 the game just shows "Depth N". */
+const DEPTH_NAMES = [
+  'The Barrow Door', 'Roots of the World-Tree', 'The Whispering Halls',
+  'The Mossgrown Stair', 'The Sunless Vestibule', 'The Ember Warrens',
+  'Hall of the Fallen Oath', 'The Drowned Vaults', 'The Weeping Galleries',
+  'The Ashen Deep',
+  'Bridge of the Dead', 'The Frost-Bitten Gallery', 'Nidhogg’s Larder',
+  'The Serpent’s Coil', 'Halls of the Nine Chains', 'The Black Mere',
+  'The Sunken Longhouse', 'The Bone Orchard', 'The Rime-Locked Crypt',
+  'The Hall of Broken Shields',
+  'The Gnawing Dark', 'The Cinder Vaults', 'Grave of the Sea-Kings',
+  'The Hollow Roots', 'The Screaming Passage', 'The River Gjöll',
+  'The Echoing Deep', 'Garm’s Kennels', 'The Shrouded Steps',
+  'The Marrow Halls',
+  'The Frozen Wake', 'The Hall of Cold Iron', 'The Drowned Barrow',
+  'The Wailing Vault', 'The Ember Bridge', 'The Serpent-Haunted Deep',
+  'The Hall of Ash and Salt', 'The Sunless Forge', 'The Broken Longship',
+  'The Cairn of Kings',
+  'The Deepening Gloom', 'The Hall of Frost-Giants', 'The Charnel Steps',
+  'The Whispering Roots', 'The Vault of Embers', 'The Muspel Threshold',
+  'The Smouldering Halls', 'The Forge of Sindri', 'The Cinderways',
+  'The Molten Vaults',
+  'The Hall of Sparks', 'The Ash-Choked Deep', 'The Serpent’s Maw',
+  'Jörmungandr’s Shadow', 'The Venom Galleries', 'The Coiled Dark',
+  'The Hall of Slithering', 'The Fanged Passage', 'The Scaled Deep',
+  'The Drowned Serpent-Hall',
+  'The Ninth Descent', 'The Chained Vault', 'Fenrir’s Pit',
+  'The Hall of Broken Fetters', 'The Howling Deep', 'The Marrow Throne',
+  'The Bone Cathedral', 'The Grinning Halls', 'The Ossuary Deep',
+  'The Hall of Ten Thousand Dead',
+  'The Silent Barrows', 'The Hollow King’s Seat', 'The Grave-Cold Vault',
+  'The Shade-Wreathed Halls', 'The Deep Without Stars', 'Hel’s Antechamber',
+  'The Threshold of Éljúðnir', 'The Hall of Hunger', 'The Table of the Dead',
+  'The Grey Sovereign’s Court',
+  'The Fading Light', 'The Abyssal Stair', 'The Sunless Sea',
+  'The Drowned Firmament', 'The Weight of the World', 'The Roots of Nothing',
+  'The Last Ember', 'The Frost at the Bottom', 'The Hall Beyond Halls',
+  'The Unlit Deep',
+  'The Breathless Dark', 'The Hollow Beneath Hel', 'The Forgotten Descent',
+  'The End of All Stairs', 'The Nameless Vault', 'The Deep That Answers Not',
+  'The Final Barrow', 'The Mouth of the Void', 'The Threshold of Nothing',
+  'The Bottom That Is Not',
 ];
 
-function rollDepthName() {
-  const pickFrom = arr => arr[Math.floor(Math.random() * arr.length)];
-  return `The ${pickFrom(DEPTH_ADJ)} ${pickFrom(DEPTH_PLACE)} ${pickFrom(DEPTH_OWNER)}`;
+/* Returns the fixed name for depths 1–100, or '' past that (shown as "Depth N"). */
+function depthName(depth) {
+  return (depth >= 1 && depth <= DEPTH_NAMES.length) ? DEPTH_NAMES[depth - 1] : '';
 }
 
 const KILL_WORDS = ['falls', 'crumbles', 'is cut down', 'is felled', 'shatters', 'is slain'];

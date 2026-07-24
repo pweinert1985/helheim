@@ -199,12 +199,16 @@ main {
 
 /* ---------- controls ---------- */
 
+/* Fixed 4-column grid so the row layout never flips as button labels change
+   width (e.g. Leap's "50 vigor · 3 tiles" vs "need 50 vigor"). 4 core actions
+   fill one row; optional buttons (Recall/Bifrost/Blessings) flow to a 2nd row. */
 #controls {
-  display: flex;
-  gap: 10px;
-  margin-top: 12px;
-  flex-wrap: wrap;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px auto 0;
+  width: 100%;
+  max-width: 520px;
 }
 
 .action-btn {
@@ -217,8 +221,8 @@ main {
   border: 1px solid var(--border);
   border-radius: 10px;
   color: var(--text);
-  padding: 8px 16px 7px;
-  min-width: 108px;
+  padding: 8px 8px 7px;
+  min-width: 0;
   cursor: pointer;
   font-family: inherit;
   transition: border-color 0.15s, transform 0.1s;
@@ -518,5 +522,6 @@ footer {
   h1 { font-size: 1.25rem; }
   .hud { gap: 9px; }
   .vigor-bar { width: 80px; }
-  .action-btn { min-width: 88px; padding: 7px 10px 6px; }
+  .action-btn { padding: 7px 6px 6px; }
+  .action-btn .label { font-size: 0.76rem; }
 }
