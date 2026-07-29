@@ -8,6 +8,8 @@ const Renderer = (() => {
   const anims = new Map(); // entity id -> {x, y}
   let deathAnim = null;    // {t0} while the player's death sequence plays
   const DEATH_ANIM_MS = 1500;
+  let preview = null;      // press-and-hold action preview (see Game.computePreview)
+  function setPreview(p) { preview = p; }
 
   function init(cv) {
     canvas = cv;
@@ -529,6 +531,9 @@ const Renderer = (() => {
   function drawHighlights() {
     const st = Game.state;
     if (st.over || st.modal) return;
+    // While a preview is held, the preview overlay replaces the normal
+    // highlights/threat dashes so the board reads clearly.
+    if (preview) { drawPreviewThreats(); return; }
     const hl = Game.currentHighlights();
     for (const { h, kind } of hl) {
       const c = tileCenter(h);
@@ -560,6 +565,117 @@ const Renderer = (() => {
       ctx.setLineDash([3, 4]);
       ctx.stroke();
       ctx.setLineDash([]);
+    }
+  }
+
+  /* ---------- press-and-hold preview overlay ---------- */
+
+  // Strong threat tiles (drawn under entities, in place of the dashed markers).
+  function drawPreviewThreats() {
+    if (!preview || !preview.threats) return;
+    for (const k of preview.threats) {
+      const [q, r] = k.split(',').map(Number);
+      const c = tileCenter({ q, r });
+      hexPath(c.x, c.y, hexSize * 0.88);
+      ctx.fillStyle = 'rgba(255,70,70,0.16)';
+      ctx.strokeStyle = 'rgba(255,80,80,0.75)';
+      ctx.lineWidth = 2;
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  function drawGhost(c, now) {
+    const s = hexSize;
+    ctx.save();
+    ctx.globalAlpha = 0.5 + 0.12 * Math.sin(now / 300);
+    // dashed landing ring
+    ctx.strokeStyle = 'rgba(180,230,255,0.9)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    hexPath(c.x, c.y, s * 0.9);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // translucent raider silhouette
+    const x = c.x, y = c.y;
+    ctx.fillStyle = 'rgba(120,180,230,0.7)';
+    ctx.beginPath(); ctx.ellipse(x, y + s * 0.08, s * 0.26, s * 0.3, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y - s * 0.3, s * 0.17, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(200,220,240,0.7)';
+    ctx.beginPath(); ctx.arc(x, y - s * 0.34, s * 0.18, Math.PI, 2 * Math.PI); ctx.fill();
+    ctx.restore();
+  }
+
+  // Markers drawn on top of entities: kill Xs, stun sparks, ghost, spear, rings.
+  function drawPreviewMarks(now) {
+    if (!preview) return;
+    const s = hexSize;
+
+    if (preview.focusFoe) {
+      const c = tileCenter(preview.focusFoe);
+      const pulse = 0.5 + 0.4 * Math.sin(now / 240);
+      ctx.strokeStyle = `rgba(255,235,150,${0.6 + pulse * 0.4})`;
+      ctx.lineWidth = 2.5;
+      hexPath(c.x, c.y, s * 0.86);
+      ctx.stroke();
+    }
+
+    for (const t of preview.push || []) {
+      const a = tileCenter(t.from), b = tileCenter(t.to);
+      ctx.strokeStyle = 'rgba(255,180,120,0.9)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      const ang = Math.atan2(b.y - a.y, b.x - a.x);
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y);
+      ctx.lineTo(b.x - 8 * Math.cos(ang - 0.5), b.y - 8 * Math.sin(ang - 0.5));
+      ctx.lineTo(b.x - 8 * Math.cos(ang + 0.5), b.y - 8 * Math.sin(ang + 0.5));
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(255,180,120,0.9)';
+      ctx.fill();
+    }
+
+    if (preview.boom) {
+      const c = tileCenter(preview.boom);
+      ctx.strokeStyle = 'rgba(255,150,60,0.9)';
+      ctx.lineWidth = 2;
+      hexPath(c.x, c.y, s * 0.85);
+      ctx.stroke();
+    }
+
+    for (const d of preview.dying || []) {
+      const c = tileCenter(d);
+      hexPath(c.x, c.y, s * 0.9);
+      ctx.fillStyle = 'rgba(255,60,60,0.22)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,70,70,0.95)';
+      ctx.lineWidth = 3;
+      const r = s * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(c.x - r, c.y - r); ctx.lineTo(c.x + r, c.y + r);
+      ctx.moveTo(c.x + r, c.y - r); ctx.lineTo(c.x - r, c.y + r);
+      ctx.stroke();
+    }
+
+    for (const st of preview.stun || []) {
+      const c = tileCenter(st);
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.font = `${Math.round(s * 0.4)}px serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('✦', c.x, c.y - s * 0.4);
+    }
+
+    if (preview.spear) drawSpearOnGround(preview.spear);
+    if (preview.ghost) drawGhost(tileCenter(preview.ghost), now);
+
+    if (preview.playerHit) {
+      const c = tileCenter(Game.state.player);
+      const pulse = 0.5 + 0.4 * Math.sin(now / 180);
+      ctx.strokeStyle = `rgba(255,60,60,${0.6 + pulse * 0.4})`;
+      ctx.lineWidth = 3;
+      hexPath(c.x, c.y, s * 0.8);
+      ctx.stroke();
     }
   }
 
@@ -631,6 +747,7 @@ const Renderer = (() => {
     for (const f of st.foes) drawFoe(f, now);
     if (!st.over) drawPlayer(st.player, now);
     else if (deathAnim) drawPlayerDeath(now);
+    drawPreviewMarks(now);
     drawEffects(now);
 
     // Hover tooltip target
@@ -647,7 +764,7 @@ const Renderer = (() => {
   function setHover(h) { hoverTile = h; }
 
   return {
-    init, pixelToTile, setAnim, clearAnims, setHover, playerDeath,
+    init, pixelToTile, setAnim, clearAnims, setHover, playerDeath, setPreview,
     fxSlash, fxBoom, fxBeam, fxText, fxStun, fxLunge,
   };
 })();

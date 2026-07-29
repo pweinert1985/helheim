@@ -2,7 +2,7 @@
 'use strict';
 
 /* Keep in sync with the ?v=N cache tags in index.html when shipping. */
-const GAME_VERSION = 'v30';
+const GAME_VERSION = 'v31';
 
 const BLESSINGS = [
   {

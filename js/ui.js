@@ -180,45 +180,80 @@ const UI = (() => {
     const canvas = $('board');
     Renderer.init(canvas);
 
-    canvas.addEventListener('click', e => {
-      const rect = canvas.getBoundingClientRect();
-      Game.clickTile(Renderer.pixelToTile(e.clientX - rect.left, e.clientY - rect.top));
-    });
-    canvas.addEventListener('mousemove', e => {
-      const rect = canvas.getBoundingClientRect();
-      const h = Renderer.pixelToTile(e.clientX - rect.left, e.clientY - rect.top);
-      Renderer.setHover(h);
-      // Tooltip
+    // Input: a quick tap commits an action; a press-and-hold shows a preview
+    // (Game.computePreview) and releasing without a clean tap cancels it.
+    const HOLD_MS = 180;
+    let hold = null; // { downTime, tile, moved }
+
+    const tileFromEvent = e => {
+      const r = canvas.getBoundingClientRect();
+      return Renderer.pixelToTile(e.clientX - r.left, e.clientY - r.top);
+    };
+    const sameTile = (a, b) => a && b && a.q === b.q && a.r === b.r;
+
+    function showTooltip(h) {
       const tip = $('tooltip');
-      if (h && Game.state && !Game.state.over) {
-        const f = Game.foeAt(h);
-        const b = Game.bombAt(h);
-        let text = '';
-        if (f) {
-          const def = FOES[f.type];
-          text = `<b>${f.elite ? 'Ancient ' : ''}${def.name}</b>${f.elite ? ' (2 hits)' : ''} — ${def.desc}`;
-        } else if (b) {
-          text = `<b>Burning ember</b> — bursts ${b.fuse <= 1 ? 'after your next move' : 'soon'}, scorching all adjacent tiles.`;
-        } else if (hexEq(h, Game.state.rune)) {
-          text = Game.state.runeUsed
-            ? '<b>Runestone</b> — its power is spent for this depth.'
-            : '<b>Runestone</b> — stand beside it and tap it to receive a blessing (once per depth).';
-        } else if (hexEq(h, Game.state.stairs)) {
-          text = '<b>Descending stair</b> — step here to delve deeper. When the floor is clear, tap it to walk there automatically.';
-        } else if (Game.state.player.spearAt && hexEq(h, Game.state.player.spearAt)) {
-          text = '<b>Your spear</b> — step onto it to pick it up.';
-        } else if (Game.tileAt(h) && Game.tileAt(h).lava) {
-          text = '<b>Fire rift</b> — instantly fatal. Bash foes into it.';
-        }
-        if (text) {
-          tip.innerHTML = text;
-          tip.style.display = 'block';
-        } else tip.style.display = 'none';
-      } else tip.style.display = 'none';
-    });
-    canvas.addEventListener('mouseleave', () => {
-      Renderer.setHover(null);
+      if (!h || !Game.state || Game.state.over) { tip.style.display = 'none'; return; }
+      const f = Game.foeAt(h), b = Game.bombAt(h);
+      let text = '';
+      if (f) {
+        const def = FOES[f.type];
+        text = `<b>${f.elite ? 'Ancient ' : ''}${def.name}</b>${f.elite ? ' (2 hits)' : ''} — ${def.desc}`;
+      } else if (b) {
+        text = `<b>Burning ember</b> — bursts ${b.fuse <= 1 ? 'after your next move' : 'soon'}, scorching all adjacent tiles.`;
+      } else if (hexEq(h, Game.state.rune)) {
+        text = Game.state.runeUsed
+          ? '<b>Runestone</b> — its power is spent for this depth.'
+          : '<b>Runestone</b> — stand beside it and tap it to receive a blessing (once per depth).';
+      } else if (hexEq(h, Game.state.stairs)) {
+        text = '<b>Descending stair</b> — step here to delve deeper. When the floor is clear, tap it to walk there automatically.';
+      } else if (Game.state.player.spearAt && hexEq(h, Game.state.player.spearAt)) {
+        text = '<b>Your spear</b> — step onto it to pick it up.';
+      } else if (Game.tileAt(h) && Game.tileAt(h).lava) {
+        text = '<b>Fire rift</b> — instantly fatal. Bash foes into it.';
+      }
+      if (text) { tip.innerHTML = text; tip.style.display = 'block'; } else tip.style.display = 'none';
+    }
+
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+    canvas.addEventListener('pointerdown', e => {
+      if (!Game.state || Game.state.over || Game.state.modal) return;
+      const tile = tileFromEvent(e);
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      hold = { downTime: performance.now(), tile, moved: false };
+      Renderer.setPreview(Game.computePreview(tile));
       $('tooltip').style.display = 'none';
+      e.preventDefault();
+    });
+    canvas.addEventListener('pointermove', e => {
+      const tile = tileFromEvent(e);
+      if (hold) {
+        if (!sameTile(tile, hold.tile)) {
+          hold.tile = tile;
+          hold.moved = true;
+          Renderer.setPreview(Game.computePreview(tile));
+        }
+      } else {
+        Renderer.setHover(tile);
+        showTooltip(tile);
+      }
+    });
+    function endHold(e, commit) {
+      if (!hold) return;
+      const info = hold;
+      hold = null;
+      Renderer.setPreview(null);
+      const tile = tileFromEvent(e);
+      // Commit only on a clean quick tap: short, no slide to another tile.
+      if (commit && tile && sameTile(tile, info.tile) && !info.moved &&
+          performance.now() - info.downTime < HOLD_MS) {
+        Game.clickTile(tile);
+      }
+    }
+    canvas.addEventListener('pointerup', e => endHold(e, true));
+    canvas.addEventListener('pointercancel', e => endHold(e, false));
+    canvas.addEventListener('pointerleave', () => {
+      if (!hold) { Renderer.setHover(null); $('tooltip').style.display = 'none'; }
     });
 
     $('btn-throw').addEventListener('click', () => Game.setMode('throw'));

@@ -1043,6 +1043,189 @@ const Game = (() => {
     return out;
   }
 
+  /* ================= press-and-hold preview =================
+     computePreview(dest) returns, WITHOUT mutating state, what tapping `dest`
+     would do — so the UI can show it on a press-and-hold and cancel on release.
+     A quick tap still commits via clickTile(). */
+
+  // Threatened tiles for a SINGLE foe (used when holding on an enemy).
+  function threatTilesForFoe(f) {
+    const out = new Set();
+    if (!f || f.stun > 0) return out;
+    const def = FOES[f.type];
+    if (f.type === 'draugr') {
+      for (const n of hexNeighbors(f)) { const t = tileAt(n); if (t && !t.lava) out.add(hexKey(n.q, n.r)); }
+    } else if (f.type === 'archer' || (f.type === 'volva' && !(f.cooldown > 0))) {
+      for (const d of HEX_DIRS) {
+        for (let i = 1; i <= def.maxRange; i++) {
+          const c = hexAdd(f, hexScale(d, i));
+          if (!tileAt(c)) break;
+          if (foeAt(c) || bombAt(c) || hexEq(c, state.rune)) break;
+          if (i >= def.minRange) out.add(hexKey(c.q, c.r));
+        }
+      }
+    } else if (f.type === 'surtling') {
+      if (f.charges >= def.chargesNeeded) {   // where it could lob an ember + its blast
+        for (const n of hexNeighbors(state.player)) {
+          const t = tileAt(n);
+          if (t && !t.lava && !foeAt(n) && !bombAt(n) && !hexEq(n, state.rune) &&
+              !hexEq(n, state.stairs) && hexDist(f, n) <= def.range && hexDist(f, n) >= 2) {
+            out.add(hexKey(n.q, n.r));
+            for (const m of hexNeighbors(n)) { if (tileAt(m)) out.add(hexKey(m.q, m.r)); }
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  // Threat map with a set of foes hypothetically removed (their kills previewed).
+  function simThreats(deadFoes) {
+    if (!deadFoes || !deadFoes.length) return threatSet();
+    const saved = state.foes;
+    state.foes = state.foes.filter(f => !deadFoes.includes(f));
+    const t = threatSet();
+    state.foes = saved;
+    return t;
+  }
+
+  // Foes that a move from -> to would kill (stab + lunge + deep lunge), read-only.
+  function wouldMoveKill(from, to) {
+    const dead = [];
+    const before = state.foes.filter(f => hexDist(f, from) === 1);
+    const afterSet = new Set(state.foes.filter(f => hexDist(f, to) === 1));
+    for (const f of before) if (afterSet.has(f)) dead.push(f);
+    if (state.player.hasSpear || has('swordlunge')) {
+      const ray = hexRay(from, to);
+      if (ray) {
+        const ahead = hexAdd(to, ray.dir);
+        const target = foeAt(ahead);
+        if (target && !dead.includes(target)) {
+          dead.push(target);
+          if (has('deeplunge')) {
+            const behind = foeAt(hexAdd(ahead, ray.dir));
+            if (behind && !dead.includes(behind)) dead.push(behind);
+          }
+        }
+      }
+    }
+    return dead;
+  }
+
+  function previewMove(dest) {
+    const from = { q: state.player.q, r: state.player.r };
+    const isLeap = hexDist(from, dest) >= 2;
+    const dead = [];
+    const crush = (isLeap && has('thorsdescent')) ? foeAt(dest) : null;
+    if (crush) dead.push(crush);
+    for (const f of wouldMoveKill(from, dest)) if (!dead.includes(f)) dead.push(f);
+    const stun = (isLeap && has('stagger'))
+      ? state.foes.filter(f => !dead.includes(f) && hexDist(f, dest) === 1) : [];
+    return {
+      type: isLeap ? 'leap' : 'move',
+      ghost: { q: dest.q, r: dest.r },
+      dying: dead.map(f => ({ q: f.q, r: f.r })),
+      stun: stun.map(f => ({ q: f.q, r: f.r })),
+      threats: simThreats(dead),
+    };
+  }
+
+  function previewThrow(dest) {
+    const target = foeAt(dest);
+    const dead = target ? [target] : [];
+    const stun = has('thunderfall')
+      ? state.foes.filter(f => !dead.includes(f) && hexDist(f, dest) === 1) : [];
+    return {
+      type: 'throw',
+      spear: { q: dest.q, r: dest.r },
+      dying: dead.map(f => ({ q: f.q, r: f.r })),
+      stun: stun.map(f => ({ q: f.q, r: f.r })),
+      threats: simThreats(dead),
+    };
+  }
+
+  // Read-only version of the bomb branch of pushEntity: where it detonates + who dies.
+  function simPushBomb(b, dir) {
+    let c = { q: b.q, r: b.r }, impact = null;
+    for (let i = 0; i < state.player.bashPush; i++) {
+      const dst = hexAdd(c, dir), t = tileAt(dst);
+      if (!t) return { gone: true };
+      if (t.lava) { c = dst; break; }
+      if (foeAt(dst) || bombAt(dst) || hexEq(dst, state.rune)) { impact = dst; break; }
+      c = dst;
+    }
+    if (impact) c = impact;
+    const deadFoes = state.foes.filter(f => hexDist(f, c) <= 1);
+    return { detonateAt: c, deadFoes, playerHit: hexDist(state.player, c) <= 1 };
+  }
+
+  // Read-only version of the foe branch of pushEntity.
+  function simPushFoe(f, dir) {
+    let c = { q: f.q, r: f.r }, dies = false, dieAt = null;
+    for (let i = 0; i < state.player.bashPush; i++) {
+      const dst = hexAdd(c, dir), t = tileAt(dst);
+      if (!t) { dies = true; break; }                 // off the edge
+      if (t.lava) { dies = true; dieAt = dst; break; } // into the fire
+      if (!isWalkable(dst, true)) break;               // blocked — stays, stunned
+      c = dst;
+    }
+    return { finalTile: c, dies, dieAt };
+  }
+
+  function previewBashOne(pos, dir, res) {
+    const f = foeAt(pos), b = bombAt(pos);
+    if (f) {
+      const r = simPushFoe(f, dir);
+      if (r.dies) { res.dying.push({ q: f.q, r: f.r }); if (r.dieAt) res.boom = r.dieAt; }
+      else { res.push.push({ from: { q: f.q, r: f.r }, to: r.finalTile }); res.stun.push(r.finalTile); }
+    } else if (b) {
+      const r = simPushBomb(b, dir);
+      if (!r.gone) {
+        res.boom = r.detonateAt;
+        for (const d of r.deadFoes) res.dying.push({ q: d.q, r: d.r });
+        if (r.playerHit) res.playerHit = true;
+      }
+    }
+  }
+
+  function previewBash(dest) {
+    const res = { type: 'bash', dying: [], stun: [], push: [] };
+    if (has('sweeping')) {
+      for (const n of hexNeighbors(state.player)) {
+        previewBashOne(n, { q: n.q - state.player.q, r: n.r - state.player.r }, res);
+      }
+    } else {
+      const dir = { q: dest.q - state.player.q, r: dest.r - state.player.r };
+      previewBashOne(dest, dir, res);
+      if (has('echostep')) {
+        const back = { q: state.player.q - dir.q, r: state.player.r - dir.r };
+        if (isWalkable(back, false)) res.ghost = back;
+      }
+    }
+    const deadFoeObjs = state.foes.filter(x => res.dying.some(d => d.q === x.q && d.r === x.r));
+    res.threats = simThreats(deadFoeObjs);
+    return res;
+  }
+
+  function computePreview(dest) {
+    if (!state || state.over || state.modal || traveling || state.replay || !dest) return null;
+    if (mode === 'throw') {
+      return (state.player.hasSpear && throwTargets().some(t => hexEq(t.h, dest))) ? previewThrow(dest) : null;
+    }
+    if (mode === 'bash') {
+      if (has('sweeping')) return previewBash(dest);
+      return bashTargets().some(t => hexEq(t.h, dest)) ? previewBash(dest) : null;
+    }
+    if (mode === 'leap') {
+      return leapTargets().some(t => hexEq(t.h, dest)) ? previewMove(dest) : null;
+    }
+    // idle: a reachable tile previews the move; otherwise a foe previews its attack
+    if (validMoves().some(x => hexEq(x.h, dest))) return previewMove(dest);
+    const f = foeAt(dest);
+    if (f) return { type: 'foe', focusFoe: { q: f.q, r: f.r }, threats: threatTilesForFoe(f) };
+    return null;
+  }
+
   /* ================= input ================= */
 
   function clickTile(h) {
@@ -1113,7 +1296,7 @@ const Game = (() => {
     set state(s) { state = s; },
     newGame, clickTile, setMode, getMode, loadRuns,
     actWait, actRecall, actFollow, actPray,
-    currentHighlights, threatSet,
+    currentHighlights, threatSet, computePreview,
     tileAt, foeAt, bombAt,
     Sound,
     has, leapRange,
