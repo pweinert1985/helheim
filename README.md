@@ -2,7 +2,7 @@
 
 A turn-based, hex-grid tactics roguelike, inspired by the movement-as-combat design of games like *Hoplite* — reimagined with a Norse theme and **no final floor**. Descend forever into the underworld; every depth spawns more (and deadlier) restless dead.
 
-**Zero dependencies.** Plain HTML/CSS/JavaScript with procedural canvas art and WebAudio synth sound. No build step, no trackers. MIT licensed.
+**Zero dependencies.** Plain HTML/CSS/JavaScript with procedural canvas art and WebAudio synth sound. No build step, no trackers.
 
 **One codebase, two ways to play:**
 
@@ -97,7 +97,3 @@ Every turn is silently recorded (a ~2 KB snapshot; history resets each floor). P
 - **copy bug report** — copies a JSON snapshot window (±3 turns) to the clipboard. To reproduce a report: open the console and run `HelheimDev.load(<paste the JSON string>)`.
 
 Foe turn order is strictly phased so play is predictable: all attacks are declared from the board as it stands when your move ends, then they land, then non-attackers move. A foe stepping aside can never open a line of fire for another foe in the same round — the red threat markers are a promise.
-
-## License
-
-MIT — see [LICENSE](LICENSE).

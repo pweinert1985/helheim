@@ -6,15 +6,21 @@
 <title>Helheim — An Endless Viking Saga</title>
 <meta name="description" content="Helheim: a turn-based hex-grid roguelike of endless viking conquest. Descend forever into the Norse underworld.">
 <meta name="theme-color" content="#171b24">
-<link rel="stylesheet" href="css/style.css?v=31">
+<link rel="stylesheet" href="css/style.css?v=33">
 <link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
 
 <header>
-  <div class="title-block">
-    <h1>ᚺ HELHEIM ᚺ</h1>
-    <div class="subtitle">An Endless Viking Saga</div>
+  <div class="header-top">
+    <div class="title-block">
+      <h1>ᚺ HELHEIM ᚺ</h1>
+      <div class="subtitle">An Endless Viking Saga</div>
+    </div>
+    <div class="header-icons">
+      <button id="btn-mute" class="icon-btn" title="Toggle sound">🔊</button>
+      <button id="btn-help" class="icon-btn" title="How to play">?</button>
+    </div>
   </div>
   <div class="hud">
     <div class="hud-item">
@@ -34,8 +40,10 @@
       <span class="hud-label">Glory</span>
       <span class="hud-value" id="kills">0</span>
     </div>
-    <button id="btn-mute" class="icon-btn" title="Toggle sound">🔊</button>
-    <button id="btn-help" class="icon-btn" title="How to play">?</button>
+    <div class="hud-item" id="streak-hud" style="display:none" title="Kill on 3 turns in a row to trigger your streak blessing (once per depth).">
+      <span class="hud-label">Streak</span>
+      <span id="streak-pips"></span>
+    </div>
   </div>
 </header>
 
@@ -166,12 +174,12 @@
 
 <footer><span id="version"></span></footer>
 
-<script src="js/hex.js?v=31"></script>
-<script src="js/data.js?v=31"></script>
-<script src="js/level.js?v=31"></script>
-<script src="js/render.js?v=31"></script>
-<script src="js/game.js?v=31"></script>
-<script src="js/ui.js?v=31"></script>
-<script src="js/dev.js?v=31"></script>
+<script src="js/hex.js?v=33"></script>
+<script src="js/data.js?v=33"></script>
+<script src="js/level.js?v=33"></script>
+<script src="js/render.js?v=33"></script>
+<script src="js/game.js?v=33"></script>
+<script src="js/ui.js?v=33"></script>
+<script src="js/dev.js?v=33"></script>
 </body>
 </html>

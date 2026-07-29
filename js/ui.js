@@ -26,6 +26,23 @@ const UI = (() => {
     $('depth').textContent = st.depth;
     $('kills').textContent = st.glory;
 
+    // Kill-streak tracker — only shown when a streak blessing is held.
+    const hasStreak = p.blessings.has('berserk') || p.blessings.has('battletrance');
+    $('streak-hud').style.display = hasStreak ? '' : 'none';
+    if (hasStreak) {
+      const n = Math.min(st.streak, 3);
+      const spent = (!p.blessings.has('berserk') || st.berserkUsed) &&
+                    (!p.blessings.has('battletrance') || st.tranceUsed);
+      let pips = '';
+      for (let i = 0; i < 3; i++) {
+        const on = i < n ? ' on' : '';
+        const ready = (n >= 3 && !spent) ? ' ready' : '';
+        pips += `<span class="pip${on}${ready}">◆</span>`;
+      }
+      $('streak-pips').innerHTML = pips;
+      $('streak-hud').classList.toggle('spent', spent);
+    }
+
     // Buttons
     const throwBtn = $('btn-throw');
     throwBtn.disabled = st.over || !p.hasSpear;
@@ -175,7 +192,7 @@ const UI = (() => {
                         window.webkit.messageHandlers.haptic);
     if (isNative) document.body.classList.add('native');
 
-    $('version').textContent = 'Helheim ' + GAME_VERSION + ' · open source (MIT)';
+    $('version').textContent = 'Helheim ' + GAME_VERSION;
 
     const canvas = $('board');
     Renderer.init(canvas);
