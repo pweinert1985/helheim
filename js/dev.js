@@ -253,7 +253,8 @@ const Dev = (() => {
     });
   }
 
-  document.addEventListener('DOMContentLoaded', init);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 
   return { record, newFloor, load, reportJSON, view, live, resumeHere,
            get enabled() { return enabled; }, setEnabled };

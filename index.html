@@ -6,7 +6,7 @@
 <title>Helheim — An Endless Viking Saga</title>
 <meta name="description" content="Helheim: a turn-based hex-grid roguelike of endless viking conquest. Descend forever into the Norse underworld.">
 <meta name="theme-color" content="#171b24">
-<link rel="stylesheet" href="css/style.css?v=22">
+<link rel="stylesheet" href="css/style.css?v=30">
 <link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
@@ -81,33 +81,25 @@
   <div id="tooltip"></div>
 </main>
 
-<!-- Intro -->
+<!-- Intro / main menu -->
 <div class="modal-backdrop" id="modal-intro">
   <div class="modal">
     <h2>ᚺ HELHEIM ᚺ</h2>
     <p class="modal-tagline">The gates of the underworld stand open. There is no bottom — only glory.</p>
-    <div class="help-cols">
-      <div>
-        <h3>Move &amp; Kill</h3>
-        <ul>
-          <li><b>Tap an adjacent tile</b> to walk. Foes adjacent to you <i>before and after</i> a move are cut down.</li>
-          <li>Move <b>straight at a foe</b> to lunge it with your spear.</li>
-          <li>Use <b>Leap</b> (or tap a tile 2 away) to jump for 50 vigor. Kills restore 15 vigor (none for kills made mid-leap), standing beside foes restores 10, and it refills every depth.</li>
-        </ul>
-      </div>
-      <div>
-        <h3>Fight Smart</h3>
-        <ul>
-          <li><b>Throw</b> your spear at anything in range — then go retrieve it.</li>
-          <li><b>Bash</b> foes into fire rifts or off the world's edge.</li>
-          <li>Beware embers: they burst one turn after landing.</li>
-          <li>Invoke the <b>runestone</b> on every depth for one blessing — a heart or full heal is always on offer. Descend without it for <b>+10 glory</b>.</li>
-          <li>Or fight nothing at all: descend without a single foe dying for <b>+1 glory per foe spared</b>.</li>
-        </ul>
-      </div>
+    <div class="menu-buttons">
+      <button class="big-btn" id="intro-start">⚔ Begin the Descent ⚔</button>
+      <button class="big-btn secondary" id="intro-howto">How to Play</button>
+      <button class="big-btn secondary" id="intro-scores">Leaderboard</button>
     </div>
+  </div>
+</div>
+
+<!-- Leaderboard -->
+<div class="modal-backdrop" id="modal-scores">
+  <div class="modal">
+    <h2>Songs of the Fallen</h2>
     <div id="leaderboard"></div>
-    <button class="big-btn" id="intro-start">⚔ Begin the Descent ⚔</button>
+    <button class="big-btn" id="scores-close">Back</button>
   </div>
 </div>
 
@@ -149,7 +141,7 @@
         <ul>
           <li><b>Stab</b> — foes adjacent before <i>and</i> after your move die.</li>
           <li><b>Lunge</b> — move straight toward a foe to skewer it (needs spear in hand).</li>
-          <li><b>Leap</b> (L) — jump 2 tiles for 50 vigor. Kills restore 15 vigor — but not kills made mid-leap. Standing next to foes restores 10 a turn, and vigor refills at each new depth.</li>
+          <li><b>Leap</b> (L) — jump 2 tiles for 50 vigor, then a 2-turn cooldown. Kills restore 15 vigor — but not kills made mid-leap — and vigor refills at each new depth.</li>
           <li><b>Throw</b> (T) — hurl your spear up to its range; walk onto it to reclaim it. No spear, no lunge.</li>
           <li><b>Bash</b> (B) — knock a neighbor back one tile and stun it. Fire rifts and the void kill instantly.</li>
           <li><b>Hold</b> (W / Space) — pass your turn.</li>
@@ -173,12 +165,12 @@
 
 <footer><span id="version"></span></footer>
 
-<script src="js/hex.js?v=22"></script>
-<script src="js/data.js?v=22"></script>
-<script src="js/level.js?v=22"></script>
-<script src="js/render.js?v=22"></script>
-<script src="js/game.js?v=22"></script>
-<script src="js/ui.js?v=22"></script>
-<script src="js/dev.js?v=22"></script>
+<script src="js/hex.js?v=30"></script>
+<script src="js/data.js?v=30"></script>
+<script src="js/level.js?v=30"></script>
+<script src="js/render.js?v=30"></script>
+<script src="js/game.js?v=30"></script>
+<script src="js/ui.js?v=30"></script>
+<script src="js/dev.js?v=30"></script>
 </body>
 </html>

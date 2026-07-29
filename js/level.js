@@ -6,17 +6,6 @@ const BOARD_RADIUS = 4;
 function randInt(n) { return Math.floor(Math.random() * n); }
 function pick(arr) { return arr[randInt(arr.length)]; }
 
-function weightedPick(pool) {
-  let total = 0;
-  for (const [, w] of pool) total += w;
-  let roll = Math.random() * total;
-  for (const [item, w] of pool) {
-    roll -= w;
-    if (roll <= 0) return item;
-  }
-  return pool[pool.length - 1][0];
-}
-
 /*
  * Returns { tiles: Map key->{q,r,lava,decor}, stairs, rune, start, foes[] }
  * Guarantees the stairs and a rune-adjacent tile are reachable from start.
@@ -37,7 +26,7 @@ function generateLevel(depth) {
     const rune = pick(runeCandidates);
 
     // Lava rifts: scale with depth, capped so the board stays playable.
-    const lavaCount = Math.min(3 + Math.floor(depth * 0.8), 13);
+    const lavaCount = Math.min(3 + Math.floor(depth * 0.8), 8);
     const lavaCandidates = cells.filter(c =>
       !hexEq(c, start) && !hexEq(c, stairs) && !hexEq(c, rune) &&
       hexDist(c, start) > 1 && hexDist(c, stairs) > 1);
@@ -69,37 +58,32 @@ function generateLevel(depth) {
     const runeReachable = hexNeighbors(rune).some(n => reach.has(hexKey(n.q, n.r)));
     if (!reach.has(hexKey(stairs.q, stairs.r)) || !runeReachable) continue;
 
-    // Foes: spawn on reachable ground, away from the start.
-    // Gentler curve (v16): foe count grows with sqrt(depth) so the post-floor-8
-    // crowding spike is flattened and the 11-foe ceiling now arrives ~depth 25.
-    // Ancients scale the most gently of all — the biggest difficulty multiplier.
-    const foeCount = Math.min(11, 2 + Math.floor(1.8 * Math.sqrt(depth)));
-    const eliteChance = Math.max(0, Math.min(0.25, (depth - 8) * 0.02));
-    const pool = foePool(depth);
+    // Foes: spawn on reachable ground, away from the start. Composition comes
+    // from the depth's point budget (see rollFoeComposition), capped by both the
+    // per-depth foe cap and the space actually available on the board.
     const spawnCandidates = cells.filter(c => {
       const k = hexKey(c.q, c.r);
       return reach.has(k) && !tiles.get(k).lava &&
         !hexEq(c, start) && !hexEq(c, stairs) && !hexEq(c, rune) &&
         hexDist(c, start) >= 3;
     });
-    if (spawnCandidates.length < foeCount) continue;
+    const capacity = Math.min(spawnCandidates.length, foeCap(depth));
+    if (capacity < 1) continue;
     for (let i = spawnCandidates.length - 1; i > 0; i--) {
       const j = randInt(i + 1);
       [spawnCandidates[i], spawnCandidates[j]] = [spawnCandidates[j], spawnCandidates[i]];
     }
-    const foes = [];
-    for (let i = 0; i < foeCount; i++) {
+    const composition = rollFoeComposition(depth, capacity);
+    const foes = composition.map((spec, i) => {
       const c = spawnCandidates[i];
-      const type = weightedPick(pool);
-      const elite = Math.random() < eliteChance;
-      foes.push({
+      return {
         id: 'f' + depth + '_' + i,
-        type, q: c.q, r: c.r,
-        hp: elite ? 2 : 1, elite,
+        type: spec.type, q: c.q, r: c.r,
+        hp: spec.elite ? 2 : 1, elite: spec.elite,
         charges: 0, cooldown: 0,
         stun: 0,
-      });
-    }
+      };
+    });
 
     return { tiles, stairs, rune, start, foes };
   }

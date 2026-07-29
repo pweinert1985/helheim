@@ -279,6 +279,15 @@ main {
 }
 .chip.none { color: var(--dim); background: none; }
 .chip .chip-desc { color: var(--dim); }
+.stack {
+  color: #171b24;
+  background: var(--gold);
+  border-radius: 8px;
+  padding: 0 5px;
+  font-size: 0.72em;
+  font-weight: bold;
+  vertical-align: middle;
+}
 
 #tooltip {
   display: none;
@@ -369,6 +378,24 @@ main {
   transition: transform 0.1s, box-shadow 0.15s;
 }
 .big-btn:hover { transform: translateY(-1px); box-shadow: 0 0 18px rgba(216, 178, 90, 0.35); }
+
+/* Main-menu button stack */
+.menu-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 300px;
+  margin: 6px auto 0;
+}
+.menu-buttons .big-btn { margin-top: 0; }
+.big-btn.secondary {
+  background: linear-gradient(180deg, var(--panel), #1b2130);
+  border-color: var(--border);
+  color: var(--text);
+  font-size: 0.92rem;
+  letter-spacing: 0.08em;
+}
+.big-btn.secondary:hover { border-color: var(--gold); box-shadow: 0 0 14px rgba(216, 178, 90, 0.2); }
 
 /* Leaderboard */
 #leaderboard { margin: 4px 0 12px; }

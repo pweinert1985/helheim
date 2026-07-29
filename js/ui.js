@@ -38,10 +38,11 @@ const UI = (() => {
     bashBtn.querySelector('.sub').textContent = p.bashCd > 0 ? `ready in ${p.bashCd}` : 'ready';
 
     const leapBtn = $('btn-leap');
-    leapBtn.disabled = st.over || p.energy < 50 || st.bonusAction;
+    leapBtn.disabled = st.over || p.energy < 50 || st.bonusAction || p.leapCd > 0;
     leapBtn.classList.toggle('active', Game.getMode() === 'leap');
     leapBtn.querySelector('.sub').textContent =
       st.bonusAction ? 'no double leap' :
+      p.leapCd > 0 ? 'ready in ' + p.leapCd :
       p.energy < 50 ? 'need 50 vigor' :
       '50 vigor · ' + Game.leapRange() + ' tiles';
 
@@ -55,17 +56,22 @@ const UI = (() => {
     followBtn.style.display = Game.has('follow') ? '' : 'none';
     followBtn.disabled = st.over || p.hasSpear || !p.spearAt;
 
+    const stackTag = id => {
+      const n = (p.blessingCounts && p.blessingCounts[id]) || 1;
+      return n > 1 ? ` <span class="stack">×${n}</span>` : '';
+    };
+
     // Blessing chips (name + what it does)
     const chips = [...p.blessings].map(id => {
       const b = BLESSINGS.find(x => x.id === id);
-      return `<span class="chip"><b>${b.name}</b><span class="chip-desc"> — ${b.desc}</span></span>`;
+      return `<span class="chip"><b>${b.name}${stackTag(id)}</b><span class="chip-desc"> — ${b.desc}</span></span>`;
     }).join('');
     $('blessing-chips').innerHTML = chips || '<span class="chip none">No blessings yet</span>';
 
     // Native shell: same list lives in a popup instead of below the board
     const owned = [...p.blessings].map(id => {
       const b = BLESSINGS.find(x => x.id === id);
-      return `<div class="owned-blessing"><span class="b-name">${b.name}</span><span class="b-desc">${b.desc}</span></div>`;
+      return `<div class="owned-blessing"><span class="b-name">${b.name}${stackTag(id)}</span><span class="b-desc">${b.desc}</span></div>`;
     }).join('');
     $('blessing-owned').innerHTML = owned ||
       '<p class="owned-empty">No blessings yet — seek the runestones.</p>';
@@ -150,15 +156,13 @@ const UI = (() => {
         <td>${r.kills}</td><td class="lb-date">${new Date(r.when).toLocaleDateString()}</td>
       </tr>`).join('');
     el.innerHTML =
-      `<h3>Songs of the Fallen</h3>
-      <table class="lb-table">
+      `<table class="lb-table">
         <thead><tr><th>#</th><th>Glory</th><th>Depth</th><th>Slain</th><th>When</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
   }
 
   function showIntro() {
-    renderLeaderboard();
     $('modal-intro').classList.add('open');
   }
 
@@ -241,6 +245,13 @@ const UI = (() => {
       $('modal-intro').classList.remove('open');
       Game.newGame();
     });
+    // Main-menu sub-screens (open over the menu; closing returns to it)
+    $('intro-howto').addEventListener('click', () => $('modal-help').classList.add('open'));
+    $('intro-scores').addEventListener('click', () => {
+      renderLeaderboard();
+      $('modal-scores').classList.add('open');
+    });
+    $('scores-close').addEventListener('click', () => $('modal-scores').classList.remove('open'));
 
     document.addEventListener('keydown', e => {
       if (!Game.state || Game.state.modal) return;
@@ -262,4 +273,6 @@ const UI = (() => {
   return { init, update, setLog, hurtFlash, flashDepth, showBlessings, showDeath, showIntro };
 })();
 
-document.addEventListener('DOMContentLoaded', UI.init);
+// Run now if the DOM is already parsed (scripts can execute after DOMContentLoaded).
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', UI.init);
+else UI.init();

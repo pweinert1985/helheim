@@ -7,6 +7,9 @@ const Game = (() => {
   let bombSeq = 0;
   let traveling = false; // auto-walking to shrine/exit on a cleared floor
   let leapingKills = false; // kills made mid-leap earn no vigor (else leaps refund themselves)
+  // A stun value of 2 makes a stunned foe skip its retaliation AND stay visibly
+  // stunned (no threat markers) through the player's next turn before recovering.
+  const STUN = 2;
 
   /* ================= sound (tiny WebAudio synth, no assets) ================= */
   const Sound = (() => {
@@ -232,10 +235,12 @@ const Game = (() => {
         q: 0, r: 0, hp: 3, maxHp: 3,
         energy: 100, maxEnergy: 100,
         bashCd: 0, bashMax: 4, bashPush: 1,
+        leapCd: 0, leapMax: 2,
         hasSpear: true, spearAt: null,
         throwRange: 2, leapBonus: 0,
         blessings: new Set(),
         blessingCounts: {}, // id -> times taken (for the ×N stack indicator)
+        mendDepth: -99,     // depth the full-heal was last taken (2-depth cooldown)
       },
       kills: 0, glory: 0, streak: 0, berserkUsed: false,
       tranceUsed: false, bonusAction: false, shieldBlock: 0,
@@ -265,6 +270,7 @@ const Game = (() => {
     state.player.q = lvl.start.q;
     state.player.r = lvl.start.r;
     state.player.energy = state.player.maxEnergy;
+    state.player.leapCd = 0; // fresh floor — leap is ready
     if (state.player.spearAt) { state.player.spearAt = null; state.player.hasSpear = true; }
     mode = 'idle';
     Renderer.clearAnims();
@@ -309,7 +315,7 @@ const Game = (() => {
     Renderer.fxSlash(f);
     if (f.hp > 0) {
       // Wounding staggers a foe: it cannot act on the turn it was hurt.
-      f.stun = Math.max(f.stun, 1);
+      f.stun = Math.max(f.stun, STUN);
       Renderer.fxStun(f);
       log(`The ${FOES[f.type].name.toLowerCase()} is wounded and staggers!`);
       return false;
@@ -382,7 +388,7 @@ const Game = (() => {
 
   function leapTargets() {
     const out = [];
-    if (state.player.energy < 50 || state.bonusAction) return out;
+    if (state.player.energy < 50 || state.bonusAction || state.player.leapCd > 0) return out;
     for (const h of hexWithin(state.player, leapRange())) {
       if (hexDist(state.player, h) < 2) continue;
       if (isWalkable(h, false)) out.push({ h, kind: 'leap' });
@@ -449,10 +455,13 @@ const Game = (() => {
       if (!isWalkable(dest, false)) return false;
       Sound.step();
     } else if (d >= 2 && d <= leapRange()) {
-      if (state.player.energy < 50 || state.bonusAction) return false;
+      if (state.player.energy < 50 || state.bonusAction || state.player.leapCd > 0) return false;
       crushTarget = has('thorsdescent') ? foeAt(dest) : null;
       if (!isWalkable(dest, false) && !crushTarget) return false;
       state.player.energy -= 50;
+      // +1 compensates for endTurn decrementing on this same turn, so leapMax=2
+      // reads as a true 2-turn cooldown ("ready in 2", "ready in 1").
+      state.player.leapCd = state.player.leapMax + 1;
       Sound.leap();
     } else return false;
 
@@ -467,7 +476,7 @@ const Game = (() => {
 
     if (d >= 2 && has('stagger')) {
       for (const f of state.foes) {
-        if (hexDist(f, dest) === 1) { f.stun = 1; Renderer.fxStun(f); }
+        if (hexDist(f, dest) === 1) { f.stun = STUN; Renderer.fxStun(f); }
       }
     }
     // Pick up spear
@@ -507,7 +516,7 @@ const Game = (() => {
     // Thunderfall: the landing spear staggers everything around it
     if (has('thunderfall')) {
       for (const f of state.foes) {
-        if (hexDist(f, dest) === 1) { f.stun = Math.max(f.stun, 1); Renderer.fxStun(f); }
+        if (hexDist(f, dest) === 1) { f.stun = Math.max(f.stun, STUN); Renderer.fxStun(f); }
       }
     }
     mode = 'idle';
@@ -538,7 +547,7 @@ const Game = (() => {
         if (!isWalkable(dest, true)) break; // blocked mid-flight
         f.q = dest.q; f.r = dest.r;
       }
-      f.stun = 1; Renderer.fxStun(f);
+      f.stun = STUN; Renderer.fxStun(f);
     } else if (b) {
       // A bashed ember is spiked away and bursts ON IMPACT, driven as far from
       // you as it can go. If something blocks it, it detonates against that tile
@@ -726,10 +735,12 @@ const Game = (() => {
     }
     const choices = available.slice(0, 3);
     while (choices.length < 3 && !choices.includes(FALLBACK_OPTION)) choices.push(FALLBACK_OPTION);
-    // Standard gifts: an extra heart (until capped at 8) and a full heal.
+    // Standard gifts: an extra heart (until capped at 8), plus a full heal —
+    // but only when it would help (below full health) and off cooldown (it can't
+    // be taken again until 2 depths after the depth it was last used on).
     const fortitude = BLESSINGS.find(b => b.id === 'fortitude');
     if (fortitude.canTake(p)) choices.push(fortitude);
-    choices.push(MEND_OPTION);
+    if (p.hp < p.maxHp && state.depth - p.mendDepth >= 3) choices.push(MEND_OPTION);
     return choices;
   }
 
@@ -737,7 +748,11 @@ const Game = (() => {
     state.modal = 'blessing';
     UI.showBlessings(rollBlessingChoices(), choice => {
       choice.apply(state.player);
-      if (choice.id !== 'mend' && choice.id !== 'surge') state.player.blessings.add(choice.id);
+      if (choice.id !== 'mend' && choice.id !== 'surge') {
+        state.player.blessings.add(choice.id);
+        state.player.blessingCounts[choice.id] = (state.player.blessingCounts[choice.id] || 0) + 1;
+      }
+      if (choice.id === 'mend') state.player.mendDepth = state.depth; // start the 2-depth cooldown
       state.runeUsed = true;
       state.modal = null;
       Sound.bless();
@@ -768,11 +783,6 @@ const Game = (() => {
       return;
     }
 
-    // Vigor recovery: ending your action adjacent to a foe steadies your breath.
-    if (state.foes.some(f => hexDist(f, state.player) === 1)) {
-      state.player.energy = Math.min(state.player.energy + 10, state.player.maxEnergy);
-    }
-
     // Berserker streak
     if (state.turnKills > 0) state.streak += 1; else state.streak = 0;
     if (has('berserk') && !state.berserkUsed && state.streak >= 3 && state.player.hp < state.player.maxHp) {
@@ -798,6 +808,7 @@ const Game = (() => {
     state.shieldBlock = 0; // a braced shield lasts only the turn it was raised
 
     if (state.player.bashCd > 0) state.player.bashCd -= 1;
+    if (state.player.leapCd > 0) state.player.leapCd -= 1;
     UI.update();
     if (window.Dev) Dev.record();
   }
@@ -1088,6 +1099,7 @@ const Game = (() => {
     if (m === 'throw' && (!state.player.hasSpear)) { log('Your spear is not in hand.'); return; }
     if (m === 'bash' && state.player.bashCd > 0) { log('Your shield arm is still recovering.'); return; }
     if (m === 'leap' && state.bonusAction) { log('The Valkyries grant no second leap.'); return; }
+    if (m === 'leap' && state.player.leapCd > 0) { log('Your legs need a moment before the next leap.'); return; }
     if (m === 'leap' && state.player.energy < 50) { log('Too winded to leap — you need 50 vigor.'); return; }
     if (m === 'bash' && has('sweeping')) { actBash(null); return; }
     mode = (mode === m) ? 'idle' : m;

@@ -2,12 +2,12 @@
 'use strict';
 
 /* Keep in sync with the ?v=N cache tags in index.html when shipping. */
-const GAME_VERSION = 'v22';
+const GAME_VERSION = 'v30';
 
 const BLESSINGS = [
   {
     id: 'fortitude', name: "Thor's Fortitude",
-    desc: '+1 maximum heart.',
+    desc: '+1 maximum heart (up to 5×).',
     stackable: true,
     canTake: p => p.maxHp < 8,
     apply: p => { p.maxHp += 1; p.hp += 1; },
@@ -26,14 +26,14 @@ const BLESSINGS = [
   },
   {
     id: 'gungnir', name: "Gungnir's Reach",
-    desc: 'Spear throw range +1.',
+    desc: 'Spear throw range +1 (up to 2×).',
     stackable: true,
     canTake: p => p.throwRange < 4,
     apply: p => { p.throwRange += 1; },
   },
   {
     id: 'swiftarm', name: 'Swift Arm',
-    desc: 'Shield bash recovers one turn faster.',
+    desc: 'Shield bash recovers one turn faster (up to 2×).',
     stackable: true,
     canTake: p => p.bashMax > 2,
     apply: p => { p.bashMax -= 1; },
@@ -46,14 +46,21 @@ const BLESSINGS = [
   },
   {
     id: 'boots', name: "Loki's Stride",
-    desc: 'Leap distance +1.',
+    desc: 'Leap distance +1 (up to 2×).',
     stackable: true,
-    canTake: p => p.leapBonus < 3,
+    canTake: p => p.leapBonus < 2,
     apply: p => { p.leapBonus += 1; },
   },
   {
+    id: 'quickleap', name: "Sleipnir's Grace",
+    desc: 'Your leap recovers a turn faster (cooldown 1).',
+    stackable: false,
+    canTake: p => p.leapMax > 1,
+    apply: p => { p.leapMax = 1; },
+  },
+  {
     id: 'giantsarm', name: "Giant's Arm",
-    desc: 'Your bash hurls foes one tile farther.',
+    desc: 'Your bash hurls foes one tile farther (up to 2×).',
     stackable: true,
     canTake: p => p.bashPush < 3,
     apply: p => { p.bashPush += 1; },
@@ -170,19 +177,56 @@ const FOES = {
   },
 };
 
-/* Spawn pool weights by depth (v16 — gentler type ramp).
-   Draugr is a flat anchor and archer freezes at weight 8 by depth 6, so the
-   easy pair stays a constant 18: only the hard types' share grows, and only
-   after their later intro depths (surtling 6, volva 9). This keeps the hard-
-   type fraction monotonic with no dips, and the early floors pure melee/archer. */
-function foePool(depth) {
-  const pool = [
-    ['draugr', 10],
-    ['archer', 2 + Math.min(depth, 6)],
-  ];
-  if (depth >= 6) pool.push(['surtling', 1 + Math.min(Math.floor((depth - 6) / 2), 5)]);
-  if (depth >= 9) pool.push(['volva', 1 + Math.min(Math.floor((depth - 9) / 2), 5)]);
-  return pool;
+/* ================= difficulty: a points budget spent on foes =================
+   Each depth gets a pool of points; foes are "bought" from it by cost:
+     draugr 1, archer 2, surtling 3, völva 4  (an Ancient/elite adds +2).
+   Pool grows +2 per depth from a base of 3, and stops growing after depth 100.
+     depth 1 = 3, depth 2 = 5, depth 10 = 21, depth 25 = 51, depth 100 = 201. */
+
+const FOE_OPTIONS = [
+  { type: 'draugr',   elite: false, cost: 1 },
+  { type: 'archer',   elite: false, cost: 2 },
+  { type: 'surtling', elite: false, cost: 3 },
+  { type: 'volva',    elite: false, cost: 4 },
+  { type: 'draugr',   elite: true,  cost: 3 },
+  { type: 'archer',   elite: true,  cost: 4 },
+  { type: 'surtling', elite: true,  cost: 5 },
+  { type: 'volva',    elite: true,  cost: 6 },
+];
+
+function pointPool(depth) {
+  return 2 * (Math.min(depth, 100) - 1) + 3;
+}
+
+/* How many foes we'll allow on the board at a given depth (space permitting).
+   Grows slowly and plateaus, so a big budget buys tougher foes, not just more. */
+function foeCap(depth) {
+  return Math.min(20, 5 + Math.floor(depth / 3));
+}
+
+/* Spend the depth's point pool on foes, capped at `capacity` bodies.
+   Each pick is weighted toward the budget's "cost per remaining slot", so early
+   floors buy cheap swarms and deep floors buy expensive Ancients — with variety. */
+function rollFoeComposition(depth, capacity) {
+  let budget = pointPool(depth);
+  const foes = [];
+  while (budget >= 1 && foes.length < capacity) {
+    const target = budget / (capacity - foes.length); // ideal cost per remaining foe
+    const affordable = FOE_OPTIONS.filter(o => o.cost <= budget);
+    let total = 0;
+    const weights = affordable.map(o => {
+      const w = Math.exp(-Math.abs(o.cost - target) / 2); // bell curve around the target cost
+      total += w;
+      return w;
+    });
+    let r = Math.random() * total, idx = 0;
+    for (; idx < affordable.length - 1; idx++) { r -= weights[idx]; if (r <= 0) break; }
+    const pick = affordable[idx];
+    foes.push({ type: pick.type, elite: pick.elite });
+    budget -= pick.cost;
+  }
+  if (!foes.length) foes.push({ type: 'draugr', elite: false });
+  return foes;
 }
 
 /* Fixed depth names for depths 1–100 (a steady descent from the barrow-door
