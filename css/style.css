@@ -259,18 +259,9 @@ main {
   box-shadow: 0 0 12px rgba(216, 178, 90, 0.35);
   background: linear-gradient(180deg, #33404f, #232b3a);
 }
-.action-btn .icon { font-size: 1.2rem; }
+.action-btn .icon { font-size: 1.35rem; }
 .action-btn .label { font-size: 0.82rem; }
 .action-btn .sub { font-size: 0.66rem; color: var(--dim); }
-.action-btn kbd {
-  position: absolute;
-  top: 4px; right: 6px;
-  font-size: 0.6rem;
-  color: var(--dim);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 0 3px;
-}
 
 /* ---------- log & chips ---------- */
 
@@ -485,13 +476,12 @@ main {
 #death-stats b { color: var(--gold); }
 .newbest { color: var(--green); }
 
-/* ---------- native iOS shell ---------- */
+/* ---------- native iOS shell / mobile: blessings as a popup, not inline chips ---------- */
 
 #btn-blessings { display: none; }
-#btn-blessings .icon { color: var(--gold); font-size: 1.3rem; }
+#btn-blessings .icon { color: var(--gold); font-size: 1.35rem; }
 body.native #btn-blessings { display: flex; }
 body.native #blessing-chips { display: none; }
-body.native .action-btn kbd { display: none; }
 
 .owned-blessing {
   display: flex;
@@ -571,10 +561,37 @@ footer {
 }
 
 @media (max-width: 560px) {
+  main { padding: 0 8px 12px; }
   h1 { font-size: 1.25rem; }
   .hud { gap: 6px; }
   .vigor-bar { width: 68px; }
   .hud-label { font-size: 0.58rem; }
-  .action-btn { padding: 7px 6px 6px; }
-  .action-btn .label { font-size: 0.76rem; }
+  /* Bigger, thumb-friendly action buttons */
+  .action-btn { padding: 9px 6px 8px; min-height: 62px; justify-content: center; }
+  .action-btn .label { font-size: 0.78rem; }
+  #controls { gap: 6px; }
+  /* Blessings live in a tap-to-open popup instead of a long inline chip list */
+  #btn-blessings { display: flex; }
+  #blessing-chips { display: none; }
+  #log { margin-top: 10px; font-size: 0.9rem; }
+  footer { padding: 10px; }
 }
+
+/* ---------- portrait lock (web): phones held sideways get a nudge ---------- */
+#rotate-notice { display: none; }
+@media (orientation: landscape) and (max-height: 500px) {
+  #rotate-notice {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: var(--bg);
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+  }
+  .rotate-icon { font-size: 3rem; color: var(--gold); animation: rotateHint 2s ease-in-out infinite; }
+  #rotate-notice p { color: var(--text); font-size: 1.05rem; line-height: 1.6; margin-top: 10px; }
+}
+@keyframes rotateHint { 25% { transform: rotate(-90deg); } 60% { transform: rotate(-90deg); } }

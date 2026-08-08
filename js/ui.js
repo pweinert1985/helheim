@@ -186,8 +186,8 @@ const UI = (() => {
   /* ---------- wiring ---------- */
 
   function init() {
-    // Inside the native iOS shell (detected via the haptics bridge): no keyboard,
-    // and vertical space is precious — kbd badges hide, blessings become a popup.
+    // Inside the native iOS shell (detected via the haptics bridge): vertical
+    // space is precious, so blessings become a tap-to-open popup.
     const isNative = !!(window.webkit && window.webkit.messageHandlers &&
                         window.webkit.messageHandlers.haptic);
     if (isNative) document.body.classList.add('native');
@@ -307,20 +307,6 @@ const UI = (() => {
       $('modal-scores').classList.add('open');
     });
     $('scores-close').addEventListener('click', () => $('modal-scores').classList.remove('open'));
-
-    document.addEventListener('keydown', e => {
-      if (!Game.state || Game.state.modal) return;
-      switch (e.key.toLowerCase()) {
-        case 't': Game.setMode('throw'); break;
-        case 'b': Game.setMode('bash'); break;
-        case 'l': Game.setMode('leap'); break;
-        case 'r': Game.actRecall(); break;
-        case 'f': Game.actFollow(); break;
-        case 'w': case ' ': e.preventDefault(); Game.actWait(); break;
-        case 'escape': Game.setMode(Game.getMode()); break; // toggles off
-        case '?': $('modal-help').classList.toggle('open'); break;
-      }
-    });
 
     showIntro();
   }

@@ -6,7 +6,7 @@
 <title>Helheim — An Endless Viking Saga</title>
 <meta name="description" content="Helheim: a turn-based hex-grid roguelike of endless viking conquest. Descend forever into the Norse underworld.">
 <meta name="theme-color" content="#171b24">
-<link rel="stylesheet" href="css/style.css?v=34">
+<link rel="stylesheet" href="css/style.css?v=35">
 <link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
@@ -56,28 +56,22 @@
 
   <div id="controls">
     <button id="btn-throw" class="action-btn">
-      <span class="icon">🔱</span><span class="label">Throw Spear</span><span class="sub">range 2</span>
-      <kbd>T</kbd>
+      <span class="icon">🔱</span><span class="label">Throw</span><span class="sub">range 2</span>
     </button>
     <button id="btn-bash" class="action-btn">
-      <span class="icon">🛡️</span><span class="label">Shield Bash</span><span class="sub">ready</span>
-      <kbd>B</kbd>
+      <span class="icon">🛡️</span><span class="label">Bash</span><span class="sub">ready</span>
     </button>
     <button id="btn-leap" class="action-btn">
       <span class="icon">🦅</span><span class="label">Leap</span><span class="sub">50 vigor</span>
-      <kbd>L</kbd>
-    </button>
-    <button id="btn-recall" class="action-btn" style="display:none">
-      <span class="icon">🌀</span><span class="label">Recall Spear</span><span class="sub">runic</span>
-      <kbd>R</kbd>
-    </button>
-    <button id="btn-follow" class="action-btn" style="display:none">
-      <span class="icon">🌈</span><span class="label">Bifrost Step</span><span class="sub">to spear</span>
-      <kbd>F</kbd>
     </button>
     <button id="btn-wait" class="action-btn">
       <span class="icon">⏳</span><span class="label">Hold</span><span class="sub">pass turn</span>
-      <kbd>W</kbd>
+    </button>
+    <button id="btn-recall" class="action-btn" style="display:none">
+      <span class="icon">🌀</span><span class="label">Recall</span><span class="sub">to hand</span>
+    </button>
+    <button id="btn-follow" class="action-btn" style="display:none">
+      <span class="icon">🌈</span><span class="label">Bifrost</span><span class="sub">to spear</span>
     </button>
     <button id="btn-blessings" class="action-btn">
       <span class="icon">ᛒ</span><span class="label">Blessings</span><span class="sub">none</span>
@@ -149,10 +143,10 @@
         <ul>
           <li><b>Stab</b> — foes adjacent before <i>and</i> after your move die.</li>
           <li><b>Lunge</b> — move straight toward a foe to skewer it (needs spear in hand).</li>
-          <li><b>Leap</b> (L) — jump 2 tiles for 50 vigor, then a 2-turn cooldown. Kills restore 15 vigor — but not kills made mid-leap — and vigor refills at each new depth.</li>
-          <li><b>Throw</b> (T) — hurl your spear up to its range; walk onto it to reclaim it. No spear, no lunge.</li>
-          <li><b>Bash</b> (B) — knock a neighbor back one tile and stun it. Fire rifts and the void kill instantly.</li>
-          <li><b>Hold</b> (W / Space) — pass your turn.</li>
+          <li><b>Leap</b> — jump 2 tiles for 50 vigor, then a 2-turn cooldown. Kills restore 15 vigor — but not kills made mid-leap — and vigor refills at each new depth.</li>
+          <li><b>Throw</b> — hurl your spear up to its range; walk onto it to reclaim it. No spear, no lunge.</li>
+          <li><b>Bash</b> — knock a neighbor back one tile and stun it. Fire rifts and the void kill instantly.</li>
+          <li><b>Hold</b> — pass your turn.</li>
           <li><b>Preview</b> — press and <i>hold</i> any tile (or an enemy) to preview the outcome — who dies, where you'd land, what still threatens you. Release without acting; a quick tap commits.</li>
         </ul>
       </div>
@@ -174,12 +168,20 @@
 
 <footer><span id="version"></span></footer>
 
-<script src="js/hex.js?v=34"></script>
-<script src="js/data.js?v=34"></script>
-<script src="js/level.js?v=34"></script>
-<script src="js/render.js?v=34"></script>
-<script src="js/game.js?v=34"></script>
-<script src="js/ui.js?v=34"></script>
-<script src="js/dev.js?v=34"></script>
+<!-- Shown only on phones held in landscape — Helheim is portrait-only -->
+<div id="rotate-notice">
+  <div class="rotate-inner">
+    <div class="rotate-icon">↻</div>
+    <p>Helheim is played upright.<br>Rotate your device to portrait.</p>
+  </div>
+</div>
+
+<script src="js/hex.js?v=35"></script>
+<script src="js/data.js?v=35"></script>
+<script src="js/level.js?v=35"></script>
+<script src="js/render.js?v=35"></script>
+<script src="js/game.js?v=35"></script>
+<script src="js/ui.js?v=35"></script>
+<script src="js/dev.js?v=35"></script>
 </body>
 </html>
