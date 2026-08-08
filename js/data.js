@@ -2,7 +2,7 @@
 'use strict';
 
 /* Keep in sync with the ?v=N cache tags in index.html when shipping. */
-const GAME_VERSION = 'v33';
+const GAME_VERSION = 'v34';
 
 const BLESSINGS = [
   {
@@ -80,12 +80,6 @@ const BLESSINGS = [
   {
     id: 'shieldwall', name: 'Shield Wall',
     desc: 'Bashing raises your shield: the first wound that turn is blocked.',
-    stackable: false,
-    apply: () => {},
-  },
-  {
-    id: 'valkyrie', name: "Valkyrie's Wind",
-    desc: 'After a leap you may act once more — but never leap twice.',
     stackable: false,
     apply: () => {},
   },
@@ -178,21 +172,24 @@ const FOES = {
 };
 
 /* ================= difficulty: a points budget spent on foes =================
-   Each depth gets a pool of points; foes are "bought" from it by cost:
-     draugr 1, archer 2, surtling 3, völva 4  (an Ancient/elite adds +2).
+   Each depth gets a pool of points; foes are "bought" from it by cost.
+   Base cost by type: draugr 1, archer 2, surtling 3, völva 4. Each tougher rank
+   (more hearts) adds +2 to the cost:
+     rank 0 — 1 heart  (base cost)
+     rank 1 — 2 hearts "Ancient"   (+2)
+     rank 2 — 3 hearts "Deathless"  (+4)
    Pool grows +2 per depth from a base of 3, and stops growing after depth 100.
      depth 1 = 3, depth 2 = 5, depth 10 = 21, depth 25 = 51, depth 100 = 201. */
 
-const FOE_OPTIONS = [
-  { type: 'draugr',   elite: false, cost: 1 },
-  { type: 'archer',   elite: false, cost: 2 },
-  { type: 'surtling', elite: false, cost: 3 },
-  { type: 'volva',    elite: false, cost: 4 },
-  { type: 'draugr',   elite: true,  cost: 3 },
-  { type: 'archer',   elite: true,  cost: 4 },
-  { type: 'surtling', elite: true,  cost: 5 },
-  { type: 'volva',    elite: true,  cost: 6 },
-];
+const FOE_BASE_COST = { draugr: 1, archer: 2, surtling: 3, volva: 4 };
+const RANK_NAMES = ['', 'Ancient', 'Deathless'];   // index = rank = hp - 1
+
+const FOE_OPTIONS = [];
+for (const type of ['draugr', 'archer', 'surtling', 'volva']) {
+  for (let rank = 0; rank <= 2; rank++) {
+    FOE_OPTIONS.push({ type, rank, hp: rank + 1, cost: FOE_BASE_COST[type] + 2 * rank });
+  }
+}
 
 function pointPool(depth) {
   return 2 * (Math.min(depth, 100) - 1) + 3;
@@ -222,10 +219,10 @@ function rollFoeComposition(depth, capacity) {
     let r = Math.random() * total, idx = 0;
     for (; idx < affordable.length - 1; idx++) { r -= weights[idx]; if (r <= 0) break; }
     const pick = affordable[idx];
-    foes.push({ type: pick.type, elite: pick.elite });
+    foes.push({ type: pick.type, rank: pick.rank, hp: pick.hp });
     budget -= pick.cost;
   }
-  if (!foes.length) foes.push({ type: 'draugr', elite: false });
+  if (!foes.length) foes.push({ type: 'draugr', rank: 0, hp: 1 });
   return foes;
 }
 

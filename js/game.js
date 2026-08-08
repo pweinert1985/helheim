@@ -7,6 +7,7 @@ const Game = (() => {
   let bombSeq = 0;
   let traveling = false; // auto-walking to shrine/exit on a cleared floor
   let leapingKills = false; // kills made mid-leap earn no vigor (else leaps refund themselves)
+  let bombKills = false;    // foes killed by an ember blast earn the player no vigor
   // A stun value of 2 makes a stunned foe skip its retaliation AND stay visibly
   // stunned (no threat markers) through the player's next turn before recovering.
   const STUN = 2;
@@ -326,7 +327,9 @@ const Game = (() => {
     state.turnKills += 1;
     Sound.kill();
     buzz('light');
-    if (!leapingKills) {
+    // No vigor for kills you didn't land directly: mid-leap kills and foes
+    // caught in an ember blast.
+    if (!leapingKills && !bombKills) {
       const vig = has('bloodlust') ? 30 : 15;
       state.player.energy = Math.min(state.player.energy + vig, state.player.maxEnergy);
       Renderer.fxText(f, '+' + vig, 'rgba(120,220,255,$A)');
@@ -488,15 +491,6 @@ const Game = (() => {
     // Stairs: descend immediately (no foe turn)
     if (hexEq(dest, state.stairs)) {
       endTurn(true);
-      return true;
-    }
-    // Valkyrie's Wind: a leap grants one more action (never a second leap)
-    if (d >= 2 && has('valkyrie') && !state.bonusAction) {
-      state.bonusAction = true;
-      Renderer.fxText(state.player, 'act again!', 'rgba(160,255,190,$A)');
-      log('The Valkyries bear you onward — act once more!');
-      UI.update();
-      if (window.Dev) Dev.record();
       return true;
     }
     endTurn(false);
@@ -825,9 +819,11 @@ const Game = (() => {
       Renderer.fxBoom(b);
       Sound.boom();
       if (hexDist(state.player, b) <= 1) hurtPlayer(1, 'The ember-burst');
+      bombKills = true; // these kills grant no vigor
       for (const f of [...state.foes]) {
         if (hexDist(f, b) <= 1) killFoe(f, 'caught in the blast');
       }
+      bombKills = false;
       for (const other of state.bombs) {
         if (hexDist(other, b) <= 1 && !done.has(other)) queue.push(other);
       }
@@ -1281,7 +1277,7 @@ const Game = (() => {
     if (!state || state.over || state.modal || traveling || state.replay) return;
     if (m === 'throw' && (!state.player.hasSpear)) { log('Your spear is not in hand.'); return; }
     if (m === 'bash' && state.player.bashCd > 0) { log('Your shield arm is still recovering.'); return; }
-    if (m === 'leap' && state.bonusAction) { log('The Valkyries grant no second leap.'); return; }
+    if (m === 'leap' && state.bonusAction) { log('No leaping during your bonus action.'); return; }
     if (m === 'leap' && state.player.leapCd > 0) { log('Your legs need a moment before the next leap.'); return; }
     if (m === 'leap' && state.player.energy < 50) { log('Too winded to leap — you need 50 vigor.'); return; }
     if (m === 'bash' && has('sweeping')) { actBash(null); return; }

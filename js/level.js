@@ -79,7 +79,7 @@ function generateLevel(depth) {
       return {
         id: 'f' + depth + '_' + i,
         type: spec.type, q: c.q, r: c.r,
-        hp: spec.elite ? 2 : 1, elite: spec.elite,
+        hp: spec.hp, rank: spec.rank, elite: spec.rank >= 1, // elite kept for compatibility
         charges: 0, cooldown: 0,
         stun: 0,
       };

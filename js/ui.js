@@ -215,7 +215,10 @@ const UI = (() => {
       let text = '';
       if (f) {
         const def = FOES[f.type];
-        text = `<b>${f.elite ? 'Ancient ' : ''}${def.name}</b>${f.elite ? ' (2 hits)' : ''} — ${def.desc}`;
+        const rank = f.rank != null ? f.rank : (f.elite ? 1 : 0);
+        const prefix = rank >= 2 ? 'Deathless ' : rank >= 1 ? 'Ancient ' : '';
+        const hits = rank >= 1 ? ` (${rank + 1} hits)` : '';
+        text = `<b>${prefix}${def.name}</b>${hits} — ${def.desc}`;
       } else if (b) {
         text = `<b>Burning ember</b> — bursts ${b.fuse <= 1 ? 'after your next move' : 'soon'}, scorching all adjacent tiles.`;
       } else if (hexEq(h, Game.state.rune)) {

@@ -379,12 +379,19 @@ const Renderer = (() => {
     const s = hexSize;
     const x = pos.x, y = pos.y + Math.sin(now / 420 + f.q) * 1.2;
 
-    if (f.elite) {
+    const rank = f.rank != null ? f.rank : (f.elite ? 1 : 0);
+    if (rank >= 1) {
       const pulse = 0.5 + 0.3 * Math.sin(now / 300);
-      ctx.strokeStyle = `rgba(255,205,80,${pulse})`;
+      // rank 1 (Ancient) = gold ring; rank 2 (Deathless) = crimson double ring
+      ctx.strokeStyle = rank >= 2 ? `rgba(255,110,90,${pulse})` : `rgba(255,205,80,${pulse})`;
       ctx.lineWidth = 2;
       hexPath(pos.x, pos.y, s * 0.8);
       ctx.stroke();
+      if (rank >= 2) {
+        ctx.strokeStyle = `rgba(255,150,120,${pulse * 0.7})`;
+        hexPath(pos.x, pos.y, s * 0.9);
+        ctx.stroke();
+      }
     }
 
     // Body
@@ -485,12 +492,13 @@ const Renderer = (() => {
       ctx.fill();
     }
 
-    // Elite HP pips
-    if (f.elite && f.hp > 1) {
-      ctx.fillStyle = '#ffcd50';
+    // Remaining-HP pips for tougher ranks (gold for Ancient, crimson for Deathless)
+    if (rank >= 1 && f.hp > 1) {
+      ctx.fillStyle = rank >= 2 ? '#ff8a6a' : '#ffcd50';
+      const start = pos.x - (f.hp - 1) * 5;
       for (let i = 0; i < f.hp; i++) {
         ctx.beginPath();
-        ctx.arc(pos.x - 5 + i * 10, pos.y + s * 0.62, 2.6, 0, 7);
+        ctx.arc(start + i * 10, pos.y + s * 0.62, 2.6, 0, 7);
         ctx.fill();
       }
     }
